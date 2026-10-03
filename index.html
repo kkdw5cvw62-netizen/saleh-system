@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="نظام صالح">
 <link rel="manifest" href="manifest.webmanifest">
-<title>نظام صالح — اللاعب الواقعي v1.1.3</title>
+<title>نظام صالح — اللاعب الواقعي v1.2.0</title>
 <style>
 :root{
  --bg:#03060d;--panel:#09111f;--cyan:#63edff;--violet:#987dff;--gold:#ffd36a;
@@ -77,6 +77,13 @@ body{
 .goal{border:1px solid rgba(152,125,255,.18);border-radius:14px;padding:12px;margin-bottom:9px;background:rgba(152,125,255,.025)}.goal:last-child{margin-bottom:0}
 .enemy{border:1px solid rgba(255,109,134,.16);border-radius:14px;padding:12px;margin-bottom:9px;background:rgba(255,109,134,.02)}.enemy:last-child{margin-bottom:0}
 .enemy strong{font-size:12px}.enemy p{font-size:9px;color:var(--muted);line-height:1.65;margin:5px 0 0}
+.form{display:grid;gap:10px}.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+label{display:block;font-size:9px;color:var(--muted);margin-bottom:5px}
+input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-radius:12px;background:#050b15;color:var(--text);padding:10px 11px;font-size:14px;outline:none}
+.moneybox,.sleepbox{border:1px solid rgba(99,237,255,.13);border-radius:14px;padding:12px;background:rgba(99,237,255,.025);margin-bottom:9px}
+.moneyvalue{font-size:24px;font-weight:900;margin-top:3px}.positive{color:var(--green)}.negative{color:var(--red)}
+.loglist{margin-top:9px}.logitem{display:flex;justify-content:space-between;gap:9px;padding:8px 0;border-bottom:1px solid rgba(142,164,184,.08);font-size:9px}.logitem:last-child{border-bottom:0}
+.twoBtns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .toast{position:fixed;z-index:90;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom) + 82px);max-width:496px;margin:auto;display:none;border:1px solid rgba(99,237,255,.28);border-radius:14px;padding:12px 14px;background:#081321ee;font-size:11px}.toast.show{display:block}
 </style>
 </head>
@@ -137,18 +144,65 @@ body{
 </section>
 
 <section id="life" class="page" style="margin-top:28px">
- <div class="section"><h2>أساس حياتك</h2><span>قواعدك الشخصية</span></div>
+ <div class="section"><h2>أساس حياتك</h2><span>مال + نوم مرتبطان فعليًا</span></div>
 
- <div class="priority">
-  <span class="tag gold">النوم</span>
-  <h3>المرجع: 10:00ص → 6:00م</h3>
-  <p>إذا اختل يوم واحد لا نغيّر النظام كاملًا. نرتب اليوم حسب استيقاظك الحقيقي ثم نرجع تدريجيًا للمرجع.</p>
+ <div class="card" id="moneyCard">
+  <div class="section"><h2>المال</h2><span>الرصيد ≠ المتاح</span></div>
+  <div class="form">
+   <div class="formgrid">
+    <div><label>الرصيد الحالي</label><input id="moneyBalance" type="number" inputmode="decimal" placeholder="مثال: 2500"></div>
+    <div><label>المحجوز للالتزامات</label><input id="moneyReserved" type="number" inputmode="decimal" placeholder="مثال: 1300"></div>
+   </div>
+   <button class="btn good" id="saveMoneyBtn">حفظ الوضع المالي</button>
+  </div>
+
+  <div class="grid" style="margin-top:11px">
+   <div class="moneybox"><div class="small muted">الرصيد</div><div class="moneyvalue" id="balanceView">—</div></div>
+   <div class="moneybox"><div class="small muted">المحجوز</div><div class="moneyvalue" id="reservedView">—</div></div>
+  </div>
+  <div class="moneybox">
+   <div class="small muted">المتاح الحقيقي</div>
+   <div class="moneyvalue" id="availableView">غير مسجل</div>
+   <div class="rsub">المتاح الحقيقي = الرصيد الحالي − كل المبالغ المحجوزة.</div>
+  </div>
+
+  <div class="section" style="margin-top:14px"><h2 style="font-size:15px">تسجيل مصروف</h2><span>يخصم من الرصيد</span></div>
+  <div class="form">
+   <div class="formgrid">
+    <div><label>المبلغ</label><input id="expenseAmount" type="number" inputmode="decimal" placeholder="0"></div>
+    <div><label>الوصف</label><input id="expenseNote" type="text" placeholder="قهوة، بنزين..."></div>
+   </div>
+   <button class="btn" id="addExpenseBtn">تسجيل المصروف</button>
+  </div>
+  <div class="loglist" id="expenseList"></div>
+  <div class="system" id="moneyMessage" style="margin-top:10px">لا يوجد رصيد حالي مؤكد في المرجع؛ سجّل وضعك الحقيقي هنا ليبدأ النظام من رقم صحيح.</div>
  </div>
 
- <div class="priority">
-  <span class="tag gold">المال</span>
-  <h3>المتاح الحقيقي = الرصيد − المحجوز</h3>
-  <p>وجود المال في الحساب لا يعني أنه متاح. الالتزامات تتقدم على الطلعات والمشتريات.</p>
+ <div class="card" id="sleepCard">
+  <div class="section"><h2>النوم</h2><span>بعد انتهاء الدوام الليلي</span></div>
+  <div class="system" style="margin-bottom:11px">
+   جدول <strong>10:00ص → 6:00م</strong> هو مرجعك السابق أيام الشفت الليلي. بعد انتهاء الوظيفة لم نعتمد هدف نوم جديد نهائيًا، لذلك لن يفرضه النظام عليك.
+  </div>
+
+  <div class="section"><h2 style="font-size:15px">هدف النوم الجديد</h2><span>اختياري حتى تثبته</span></div>
+  <div class="formgrid">
+   <div><label>أنام الساعة</label><input id="targetSleep" type="time"></div>
+   <div><label>أستيقظ الساعة</label><input id="targetWake" type="time"></div>
+  </div>
+  <button class="btn" id="saveSleepTargetBtn" style="width:100%;margin-top:9px">حفظ الهدف الجديد</button>
+
+  <div class="section" style="margin-top:15px"><h2 style="font-size:15px">النوم الفعلي</h2><span>آخر تسجيل</span></div>
+  <div class="formgrid">
+   <div><label>نمت الساعة</label><input id="actualSleep" type="time"></div>
+   <div><label>قمت الساعة</label><input id="actualWake" type="time"></div>
+  </div>
+  <button class="btn good" id="logSleepBtn" style="width:100%;margin-top:9px">تسجيل النوم</button>
+
+  <div class="grid" style="margin-top:11px">
+   <div class="sleepbox"><div class="small muted">مدة آخر نوم</div><div class="moneyvalue" id="sleepDurationView">—</div></div>
+   <div class="sleepbox"><div class="small muted">طاقة النوم</div><div class="moneyvalue" id="sleepScoreView">—</div></div>
+  </div>
+  <div class="moneybox"><div class="small muted">الهدف الحالي</div><div class="rtitle" id="sleepTargetView">غير مثبت</div><div class="rsub" id="sleepLastView">لم تسجل نومًا فعليًا بعد.</div></div>
  </div>
 
  <div class="priority">
@@ -238,12 +292,21 @@ body{
  const defaults={
    level:1,xp:0,title:"المبتدئ",
    prayers:{fajr:null,dhuhr:null,asr:null,maghrib:null,isha:null},
-   sleep:80,finance:70,discipline:50,focus:50
+   sleep:0,finance:0,discipline:50,focus:50,
+   money:{balance:null,reserved:null,expenses:[]},
+   sleepData:{targetSleep:null,targetWake:null,lastSleep:null,lastWake:null,lastDuration:null}
  };
  let S=JSON.parse(localStorage.getItem(STORE)||"null")||JSON.parse(JSON.stringify(defaults));
  const prayerKeys=["fajr","dhuhr","asr","maghrib","isha"];
  if(!S.prayers) S.prayers=JSON.parse(JSON.stringify(defaults.prayers));
- prayerKeys.forEach(k=>{if(S.prayers[k]===true)S.prayers[k]="ontime";else if(S.prayers[k]===false)S.prayers[k]=null;});
+ renderMoney();
+   renderSleep();
+   prayerKeys.forEach(k=>{if(S.prayers[k]===true)S.prayers[k]="ontime";else if(S.prayers[k]===false)S.prayers[k]=null;});
+ if(!S.money)S.money={balance:null,reserved:null,expenses:[]};
+ if(!Array.isArray(S.money.expenses))S.money.expenses=[];
+ if(!S.sleepData)S.sleepData={targetSleep:null,targetWake:null,lastSleep:null,lastWake:null,lastDuration:null};
+ if(S.money.balance===""||Number.isNaN(Number(S.money.balance)))S.money.balance=null;
+ if(S.money.reserved===""||Number.isNaN(Number(S.money.reserved)))S.money.reserved=null;
  const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
  const need=l=>1000+(l-1)*350;
  const rank=l=>l>=70?"S":l>=50?"A":l>=35?"B":l>=20?"C":l>=10?"D":"E";
@@ -265,8 +328,8 @@ body{
    $("#prayCount").textContent=pc;
    const stats=[
     ["ثبات العبادة",(()=>{const a=prayerVals.filter(v=>v&&v!=="excused");if(!a.length)return 0;const total=a.reduce((n,v)=>{if(v==="ontime")return n+1;if(v==="late")return n+0.25;return n;},0);return Math.round(total/a.length*100)})()],
-    ["ثبات النوم",S.sleep],
-    ["التحكم المالي",S.finance],
+    ["ثبات النوم",S.sleep||0],
+    ["التحكم المالي",S.finance||0],
     ["الانضباط",S.discipline],
     ["التركيز",S.focus]
    ];
@@ -291,6 +354,88 @@ body{
    if(logged<5){$("#nowTitle").textContent="سجّل حالة الصلاة الحالية";$("#nowWhy").textContent="اختر حالتها بدقة: في الوقت، متأخرة، عذر، أو فاتت بتقصير."}
    else{$("#nowTitle").textContent="انتقل لأهم مهمة في يومك";$("#nowWhy").textContent="الصلاة مستقرة اليوم. اختر أهم التزام أو مهمة واحدة فقط."}
  }
+ function fmtMoney(v){return v===null||v===undefined?"—":Number(v).toLocaleString("ar-SA")+" ر.س";}
+ function moneyAvailable(){
+   if(S.money.balance===null||S.money.reserved===null)return null;
+   return Number(S.money.balance)-Number(S.money.reserved);
+ }
+ function renderMoney(){
+   const b=$("#moneyBalance"),r=$("#moneyReserved");
+   if(b&&document.activeElement!==b)b.value=S.money.balance===null?"":S.money.balance;
+   if(r&&document.activeElement!==r)r.value=S.money.reserved===null?"":S.money.reserved;
+   const av=moneyAvailable();
+   if($("#balanceView"))$("#balanceView").textContent=fmtMoney(S.money.balance);
+   if($("#reservedView"))$("#reservedView").textContent=fmtMoney(S.money.reserved);
+   if($("#availableView")){
+     $("#availableView").textContent=av===null?"غير مسجل":fmtMoney(av);
+     $("#availableView").className="moneyvalue "+(av!==null&&av<0?"negative":av!==null?"positive":"");
+   }
+   const list=$("#expenseList");
+   if(list){
+     const items=(S.money.expenses||[]).slice(-5).reverse();
+     list.innerHTML=items.length?items.map(e=>'<div class="logitem"><span>'+escapeHtml(e.note||"مصروف")+'</span><strong>-'+fmtMoney(e.amount)+'</strong></div>').join(""):'<div class="rsub">لا توجد مصروفات مسجلة بعد.</div>';
+   }
+   if($("#moneyMessage")){
+     if(av===null)$("#moneyMessage").textContent="سجّل الرصيد الحالي والمحجوز أولًا حتى نحسب المتاح الحقيقي.";
+     else if(av<0)$("#moneyMessage").textContent="تحذير: الالتزامات المحجوزة أعلى من الرصيد الحالي بـ "+fmtMoney(Math.abs(av))+".";
+     else $("#moneyMessage").textContent="المتاح الحقيقي الآن: "+fmtMoney(av)+". هذا هو الرقم الذي نستخدمه قبل أي شراء اختياري.";
+   }
+ }
+ function timeToMinutes(t){if(!t)return null;const p=t.split(":").map(Number);return p[0]*60+p[1];}
+ function durationHours(start,end){
+   const a=timeToMinutes(start),b=timeToMinutes(end);if(a===null||b===null)return null;
+   let m=b-a;if(m<0)m+=1440;return Math.round((m/60)*100)/100;
+ }
+ function fmtTime(t){if(!t)return "—";let [h,m]=t.split(":").map(Number);const ap=h>=12?"م":"ص";h=h%12||12;return h+":"+String(m).padStart(2,"0")+ap;}
+ function renderSleep(){
+   if($("#targetSleep")&&document.activeElement!==$("#targetSleep"))$("#targetSleep").value=S.sleepData.targetSleep||"";
+   if($("#targetWake")&&document.activeElement!==$("#targetWake"))$("#targetWake").value=S.sleepData.targetWake||"";
+   if($("#sleepDurationView"))$("#sleepDurationView").textContent=S.sleepData.lastDuration===null?"—":S.sleepData.lastDuration+" س";
+   if($("#sleepScoreView"))$("#sleepScoreView").textContent=S.sleep?S.sleep+"%":"—";
+   if($("#sleepTargetView"))$("#sleepTargetView").textContent=(S.sleepData.targetSleep&&S.sleepData.targetWake)?fmtTime(S.sleepData.targetSleep)+" → "+fmtTime(S.sleepData.targetWake):"غير مثبت بعد انتهاء الدوام الليلي";
+   if($("#sleepLastView")){
+     $("#sleepLastView").textContent=(S.sleepData.lastSleep&&S.sleepData.lastWake)?"آخر نوم: "+fmtTime(S.sleepData.lastSleep)+" → "+fmtTime(S.sleepData.lastWake):"لم تسجل نومًا فعليًا بعد.";
+   }
+ }
+ function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));}
+ function saveMoneyState(){
+   const b=$("#moneyBalance"),r=$("#moneyReserved");
+   if(!b||!r)return;
+   const bv=b.value.trim(),rv=r.value.trim();
+   S.money.balance=bv===""?null:Math.max(0,Number(bv));
+   S.money.reserved=rv===""?null:Math.max(0,Number(rv));
+   const av=moneyAvailable();
+   S.finance=av===null?0:(av<0?20:75);
+   save();render();toast("تم تحديث وضعك المالي.");
+ }
+ function addExpense(){
+   const a=$("#expenseAmount"),n=$("#expenseNote");if(!a)return;
+   const amount=Number(a.value);if(!Number.isFinite(amount)||amount<=0){toast("أدخل مبلغ مصروف صحيح.");return;}
+   const note=(n&&n.value.trim())||"مصروف";
+   if(S.money.balance===null){toast("سجّل رصيدك الحالي أولًا.");return;}
+   S.money.balance=Math.max(0,Number(S.money.balance)-amount);
+   S.money.expenses.push({amount:amount,note:note,ts:Date.now()});
+   if(S.money.expenses.length>50)S.money.expenses=S.money.expenses.slice(-50);
+   const av=moneyAvailable();S.finance=av===null?0:(av<0?20:75);
+   a.value="";if(n)n.value="";
+   save();render();toast("تم تسجيل "+note+" · -"+fmtMoney(amount));
+ }
+ function saveSleepTarget(){
+   const s=$("#targetSleep"),w=$("#targetWake");if(!s||!w)return;
+   S.sleepData.targetSleep=s.value||null;S.sleepData.targetWake=w.value||null;
+   save();render();toast((S.sleepData.targetSleep&&S.sleepData.targetWake)?"تم اعتماد هدف النوم الجديد داخل النظام.":"تم حفظ هدف النوم الحالي.");
+ }
+ function logSleep(){
+   const s=$("#actualSleep"),w=$("#actualWake");if(!s||!w||!s.value||!w.value){toast("سجّل وقت النوم والاستيقاظ.");return;}
+   const h=durationHours(s.value,w.value);if(h===null||h<=0||h>16){toast("تحقق من أوقات النوم.");return;}
+   S.sleepData.lastSleep=s.value;S.sleepData.lastWake=w.value;S.sleepData.lastDuration=h;
+   // Duration score centered on an 8-hour practical target. Timing is not scored until a new target is explicitly set.
+   S.sleep=Math.max(0,Math.min(100,Math.round(100-Math.abs(8-h)*15)));
+   s.value="";w.value="";
+   save();render();
+   if(h>=7&&h<=9){addXp(35);S.xp=Math.max(0,S.xp);save();render();toast("تم تسجيل "+h+" ساعات · +35 XP للنوم القريب من الهدف.");}
+   else toast("تم تسجيل "+h+" ساعات. لا يوجد خصم XP؛ ستؤثر فقط على طاقة اليوم.");
+ }
  function setPrayerState(id,state){
    if(S.prayers[id])return;
    S.prayers[id]=state;
@@ -310,6 +455,20 @@ body{
      if(!btn)return;
      event.preventDefault();
      setPrayerState(btn.dataset.id,btn.dataset.state);
+   });
+ }
+ const moneyCard=$("#moneyCard");
+ if(moneyCard){
+   moneyCard.addEventListener("click",e=>{
+     if(e.target.closest("#saveMoneyBtn")){e.preventDefault();saveMoneyState();}
+     if(e.target.closest("#addExpenseBtn")){e.preventDefault();addExpense();}
+   });
+ }
+ const sleepCard=$("#sleepCard");
+ if(sleepCard){
+   sleepCard.addEventListener("click",e=>{
+     if(e.target.closest("#saveSleepTargetBtn")){e.preventDefault();saveSleepTarget();}
+     if(e.target.closest("#logSleepBtn")){e.preventDefault();logSleep();}
    });
  }
  render();
