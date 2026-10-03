@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="نظام صالح">
 <link rel="manifest" href="manifest.webmanifest">
-<title>نظام صالح — اللاعب الواقعي v1.1</title>
+<title>نظام صالح — اللاعب الواقعي v1.1.1</title>
 <style>
 :root{
  --bg:#03060d;--panel:#09111f;--cyan:#63edff;--violet:#987dff;--gold:#ffd36a;
@@ -42,7 +42,7 @@ body{
 .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--violet),var(--cyan));box-shadow:0 0 14px rgba(99,237,255,.4);transition:width .3s}
 .section{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.section h2{font-size:18px;margin:0}.section span{font-size:9px;color:var(--muted)}
 .page{padding-top:6px;scroll-margin-top:10px}
-.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid rgba(142,164,184,.09)}.row:last-child{border-bottom:0}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid rgba(142,164,184,.09)}.row:last-child{border-bottom:0}.prayerRow{align-items:flex-start}.prayerActions{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;max-width:235px}.prayerActions .btn{min-height:36px;padding:7px 8px;font-size:9px}
 .btn,.navbtn,summary{
  display:inline-flex;align-items:center;justify-content:center;min-height:46px;
  border:1px solid rgba(99,237,255,.28);background:rgba(99,237,255,.055);
@@ -120,12 +120,12 @@ body{
 <section id="worship" class="page" style="margin-top:28px">
  <div class="section"><h2>العبادة</h2><span>الفئة S</span></div>
  <div class="card">
-  <div class="wcircle"><strong><span id="prayCount">0</span>/5</strong></div>
-  <div class="row"><div><strong>الفجر</strong><div class="rsub">في الوقت = +100 XP عام</div></div><button class="btn good jsPrayer" data-id="fajr">في الوقت</button></div>
-  <div class="row"><div><strong>الظهر</strong></div><button class="btn good jsPrayer" data-id="dhuhr">في الوقت</button></div>
-  <div class="row"><div><strong>العصر</strong></div><button class="btn good jsPrayer" data-id="asr">في الوقت</button></div>
-  <div class="row"><div><strong>المغرب</strong></div><button class="btn good jsPrayer" data-id="maghrib">في الوقت</button></div>
-  <div class="row"><div><strong>العشاء</strong></div><button class="btn good jsPrayer" data-id="isha">في الوقت</button></div>
+  <div class="wcircle"><strong><span id="prayCount">0</span>/5</strong></div><div class="small muted" style="text-align:center;margin:-5px 0 10px">صلوات في وقتها</div>
+  <div class="row prayerRow" data-prayer="fajr"><div><strong>الفجر</strong><div class="rsub" id="status-fajr">لم تسجل</div></div><div class="prayerActions" id="actions-fajr"></div></div>
+  <div class="row prayerRow" data-prayer="dhuhr"><div><strong>الظهر</strong><div class="rsub" id="status-dhuhr">لم تسجل</div></div><div class="prayerActions" id="actions-dhuhr"></div></div>
+  <div class="row prayerRow" data-prayer="asr"><div><strong>العصر</strong><div class="rsub" id="status-asr">لم تسجل</div></div><div class="prayerActions" id="actions-asr"></div></div>
+  <div class="row prayerRow" data-prayer="maghrib"><div><strong>المغرب</strong><div class="rsub" id="status-maghrib">لم تسجل</div></div><div class="prayerActions" id="actions-maghrib"></div></div>
+  <div class="row prayerRow" data-prayer="isha"><div><strong>العشاء</strong><div class="rsub" id="status-isha">لم تسجل</div></div><div class="prayerActions" id="actions-isha"></div></div>
  </div>
 
  <div class="card">
@@ -237,10 +237,13 @@ body{
  const STORE="saleh_rps_v11";
  const defaults={
    level:1,xp:0,title:"المبتدئ",
-   prayers:{fajr:false,dhuhr:false,asr:false,maghrib:false,isha:false},
+   prayers:{fajr:null,dhuhr:null,asr:null,maghrib:null,isha:null},
    sleep:80,finance:70,discipline:50,focus:50
  };
  let S=JSON.parse(localStorage.getItem(STORE)||"null")||JSON.parse(JSON.stringify(defaults));
+ const prayerKeys=["fajr","dhuhr","asr","maghrib","isha"];
+ if(!S.prayers) S.prayers=JSON.parse(JSON.stringify(defaults.prayers));
+ prayerKeys.forEach(k=>{if(S.prayers[k]===true)S.prayers[k]="ontime";else if(S.prayers[k]===false)S.prayers[k]=null;});
  const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
  const need=l=>1000+(l-1)*350;
  const rank=l=>l>=70?"S":l>=50?"A":l>=35?"B":l>=20?"C":l>=10?"D":"E";
@@ -256,24 +259,51 @@ body{
    $("#xpText").textContent=S.xp+" / "+need(S.level);
    $("#xpBar").style.width=Math.min(100,S.xp/need(S.level)*100)+"%";
    $("#titleText").textContent=S.title;
-   const pc=Object.values(S.prayers).filter(Boolean).length;
+   const prayerVals=Object.values(S.prayers);
+   const pc=prayerVals.filter(v=>v==="ontime").length;
+   const logged=prayerVals.filter(Boolean).length;
    $("#prayCount").textContent=pc;
    const stats=[
-    ["ثبات العبادة",Math.round(pc/5*100)],
+    ["ثبات العبادة",(()=>{const a=prayerVals.filter(v=>v&&v!=="excused");if(!a.length)return 0;return Math.round(a.reduce((n,v)=>n+(v==="ontime"?1:v==="late"?.25:0),0)/a.length*100)})()],
     ["ثبات النوم",S.sleep],
     ["التحكم المالي",S.finance],
     ["الانضباط",S.discipline],
     ["التركيز",S.focus]
    ];
    $("#stats").innerHTML=stats.map(x=>`<div class="stat"><div class="statline"><span>${x[0]}</span><span>${x[1]}%</span></div><div class="bar"><i style="width:${x[1]}%"></i></div></div>`).join("");
-   $$(".jsPrayer").forEach(b=>{const d=S.prayers[b.dataset.id];b.disabled=d;b.textContent=d?"✓ مسجلة":"في الوقت"});
-   if(pc<5){$("#nowTitle").textContent="ثبّت الصلاة الحالية أولًا";$("#nowWhy").textContent="العبادة أعلى أولوية في نظامك الشخصي، ثم يعاد ترتيب بقية اليوم."}
+   prayerKeys.forEach(k=>{
+     const v=S.prayers[k], status=$("#status-"+k), actions=$("#actions-"+k);
+     const labels={ontime:"في الوقت · +100 XP",late:"أديتها متأخرة · +25 XP",excused:"عذر · بدون XP",missed:"فاتت بتقصير · -150 XP"};
+     if(status) status.textContent=v?labels[v]:"لم تسجل";
+     if(actions){
+       if(v){
+         const cls=v==="ontime"?"good":v==="missed"?"bad":v==="late"?"gold":"";
+         actions.innerHTML='<span class="tag '+cls+'">'+labels[v]+'</span>';
+       }else{
+         actions.innerHTML=
+          '<button class="btn good jsPrayerState" data-id="'+k+'" data-state="ontime">في الوقت</button>'+
+          '<button class="btn gold jsPrayerState" data-id="'+k+'" data-state="late">متأخرة</button>'+
+          '<button class="btn jsPrayerState" data-id="'+k+'" data-state="excused">عذر</button>'+
+          '<button class="btn bad jsPrayerState" data-id="'+k+'" data-state="missed">تقصير</button>';
+       }
+     }
+   });
+   $(".jsPrayerState").forEach(b=>b.addEventListener("click",()=>setPrayerState(b.dataset.id,b.dataset.state)));
+   if(logged<5){$("#nowTitle").textContent="سجّل حالة الصلاة الحالية";$("#nowWhy").textContent="اختر حالتها بدقة: في الوقت، متأخرة، عذر، أو فاتت بتقصير."}
    else{$("#nowTitle").textContent="انتقل لأهم مهمة في يومك";$("#nowWhy").textContent="الصلاة مستقرة اليوم. اختر أهم التزام أو مهمة واحدة فقط."}
  }
- $$(".jsPrayer").forEach(b=>b.addEventListener("click",()=>{
-   const id=b.dataset.id;if(S.prayers[id])return;
-   S.prayers[id]=true;addXp(100);S.discipline=Math.min(100,S.discipline+2);save();render();toast("+100 XP · صلاة في الوقت")
- }));
+ function setPrayerState(id,state){
+   if(S.prayers[id])return;
+   S.prayers[id]=state;
+   let delta=0,msg="";
+   if(state==="ontime"){delta=100;msg="+100 XP · الصلاة في الوقت";}
+   else if(state==="late"){delta=25;msg="+25 XP · أديتها متأخرة";}
+   else if(state==="excused"){delta=0;msg="تم تسجيل العذر · بدون مكافأة أو خصم";}
+   else if(state==="missed"){delta=-150;msg="-150 XP · فاتت بتقصير";}
+   if(delta!==0)addXp(delta);
+   S.xp=Math.max(0,S.xp);
+   save();render();toast(msg);
+ }
  render();
 })();
 </script>
