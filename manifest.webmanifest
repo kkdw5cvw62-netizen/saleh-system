@@ -1,0 +1,10 @@
+{
+  "name":"نظام صالح — اللاعب الواقعي",
+  "short_name":"نظام صالح",
+  "lang":"ar",
+  "dir":"rtl",
+  "start_url":"./index.html",
+  "display":"standalone",
+  "background_color":"#03060d",
+  "theme_color":"#030711"
+}
