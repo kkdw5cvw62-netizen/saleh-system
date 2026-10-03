@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="نظام صالح">
 <link rel="manifest" href="manifest.webmanifest">
-<title>نظام صالح — اللاعب الواقعي v1.1.2</title>
+<title>نظام صالح — اللاعب الواقعي v1.1.3</title>
 <style>
 :root{
  --bg:#03060d;--panel:#09111f;--cyan:#63edff;--violet:#987dff;--gold:#ffd36a;
@@ -117,7 +117,7 @@ body{
  </div>
 </section>
 
-<section id="worship" class="page" style="margin-top:28px">
+<section id="worship" class="page" style="margin-top:28px" data-prayer-root="1">
  <div class="section"><h2>العبادة</h2><span>الفئة S</span></div>
  <div class="card">
   <div class="wcircle"><strong><span id="prayCount">0</span>/5</strong></div><div class="small muted" style="text-align:center;margin:-5px 0 10px">صلوات في وقتها</div>
@@ -264,7 +264,7 @@ body{
    const logged=prayerVals.filter(Boolean).length;
    $("#prayCount").textContent=pc;
    const stats=[
-    ["ثبات العبادة",(()=>{const a=prayerVals.filter(v=>v&&v!=="excused");if(!a.length)return 0;return Math.round(a.reduce((n,v)=>n+(v==="ontime"?1:v==="late"?.25:0),0)/a.length*100)})()],
+    ["ثبات العبادة",(()=>{const a=prayerVals.filter(v=>v&&v!=="excused");if(!a.length)return 0;const total=a.reduce((n,v)=>{if(v==="ontime")return n+1;if(v==="late")return n+0.25;return n;},0);return Math.round(total/a.length*100)})()],
     ["ثبات النوم",S.sleep],
     ["التحكم المالي",S.finance],
     ["الانضباط",S.discipline],
@@ -288,7 +288,6 @@ body{
        }
      }
    });
-   $(".jsPrayerState").forEach(b=>b.addEventListener("click",()=>setPrayerState(b.dataset.id,b.dataset.state)));
    if(logged<5){$("#nowTitle").textContent="سجّل حالة الصلاة الحالية";$("#nowWhy").textContent="اختر حالتها بدقة: في الوقت، متأخرة، عذر، أو فاتت بتقصير."}
    else{$("#nowTitle").textContent="انتقل لأهم مهمة في يومك";$("#nowWhy").textContent="الصلاة مستقرة اليوم. اختر أهم التزام أو مهمة واحدة فقط."}
  }
@@ -304,7 +303,19 @@ body{
    S.xp=Math.max(0,S.xp);
    save();render();toast(msg);
  }
+ const prayerRoot=document.querySelector('[data-prayer-root="1"]');
+ if(prayerRoot){
+   prayerRoot.addEventListener("click",(event)=>{
+     const btn=event.target.closest(".jsPrayerState");
+     if(!btn)return;
+     event.preventDefault();
+     setPrayerState(btn.dataset.id,btn.dataset.state);
+   });
+ }
  render();
+ if("serviceWorker" in navigator){
+   navigator.serviceWorker.getRegistrations().then(regs=>regs.forEach(r=>r.unregister())).catch(()=>{});
+ }
 })();
 </script>
 </body>
