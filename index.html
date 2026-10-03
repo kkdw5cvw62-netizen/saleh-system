@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="نظام صالح">
 <link rel="manifest" href="manifest.webmanifest">
-<title>نظام صالح — اللاعب الواقعي v1.2.0</title>
+<title>نظام صالح — اللاعب الواقعي v1.2.1</title>
 <style>
 :root{
  --bg:#03060d;--panel:#09111f;--cyan:#63edff;--violet:#987dff;--gold:#ffd36a;
@@ -299,9 +299,7 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
  let S=JSON.parse(localStorage.getItem(STORE)||"null")||JSON.parse(JSON.stringify(defaults));
  const prayerKeys=["fajr","dhuhr","asr","maghrib","isha"];
  if(!S.prayers) S.prayers=JSON.parse(JSON.stringify(defaults.prayers));
- renderMoney();
-   renderSleep();
-   prayerKeys.forEach(k=>{if(S.prayers[k]===true)S.prayers[k]="ontime";else if(S.prayers[k]===false)S.prayers[k]=null;});
+ prayerKeys.forEach(k=>{if(S.prayers[k]===true)S.prayers[k]="ontime";else if(S.prayers[k]===false)S.prayers[k]=null;});
  if(!S.money)S.money={balance:null,reserved:null,expenses:[]};
  if(!Array.isArray(S.money.expenses))S.money.expenses=[];
  if(!S.sleepData)S.sleepData={targetSleep:null,targetWake:null,lastSleep:null,lastWake:null,lastDuration:null};
@@ -333,6 +331,8 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
     ["الانضباط",S.discipline],
     ["التركيز",S.focus]
    ];
+   renderMoney();
+   renderSleep();
    $("#stats").innerHTML=stats.map(x=>`<div class="stat"><div class="statline"><span>${x[0]}</span><span>${x[1]}%</span></div><div class="bar"><i style="width:${x[1]}%"></i></div></div>`).join("");
    prayerKeys.forEach(k=>{
      const v=S.prayers[k], status=$("#status-"+k), actions=$("#actions-"+k);
