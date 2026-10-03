@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="نظام صالح">
 <link rel="manifest" href="manifest.webmanifest">
-<title>نظام صالح — اللاعب الواقعي v1.2.1</title>
+<title>نظام صالح — اللاعب الواقعي v1.2.2</title>
 <style>
 :root{
  --bg:#03060d;--panel:#09111f;--cyan:#63edff;--violet:#987dff;--gold:#ffd36a;
@@ -294,7 +294,10 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
    prayers:{fajr:null,dhuhr:null,asr:null,maghrib:null,isha:null},
    sleep:0,finance:0,discipline:50,focus:50,
    money:{balance:null,reserved:null,expenses:[]},
-   sleepData:{targetSleep:null,targetWake:null,lastSleep:null,lastWake:null,lastDuration:null}
+   sleepData:{targetSleep:null,targetWake:null,lastSleep:null,lastWake:null,lastDuration:null},
+   lastActiveDate:null,
+   daily:{tasks:[],states:{}},
+   dailyHistory:[]
  };
  let S=JSON.parse(localStorage.getItem(STORE)||"null")||JSON.parse(JSON.stringify(defaults));
  const prayerKeys=["fajr","dhuhr","asr","maghrib","isha"];
@@ -303,12 +306,60 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
  if(!S.money)S.money={balance:null,reserved:null,expenses:[]};
  if(!Array.isArray(S.money.expenses))S.money.expenses=[];
  if(!S.sleepData)S.sleepData={targetSleep:null,targetWake:null,lastSleep:null,lastWake:null,lastDuration:null};
+ if(!S.daily||typeof S.daily!=="object")S.daily={tasks:[],states:{}};
+ if(!Array.isArray(S.daily.tasks))S.daily.tasks=[];
+ if(!S.daily.states||typeof S.daily.states!=="object")S.daily.states={};
+ if(!Array.isArray(S.dailyHistory))S.dailyHistory=[];
  if(S.money.balance===""||Number.isNaN(Number(S.money.balance)))S.money.balance=null;
  if(S.money.reserved===""||Number.isNaN(Number(S.money.reserved)))S.money.reserved=null;
  const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
  const need=l=>1000+(l-1)*350;
  const rank=l=>l>=70?"S":l>=50?"A":l>=35?"B":l>=20?"C":l>=10?"D":"E";
+ function riyadhDateKey(){
+   const parts=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Riyadh",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
+   const o={};parts.forEach(p=>{if(p.type!=="literal")o[p.type]=p.value;});
+   return o.year+"-"+o.month+"-"+o.day;
+ }
+ function snapshotCurrentDay(dateKey){
+   const available=(S.money&&S.money.balance!==null&&S.money.reserved!==null)?Number(S.money.balance)-Number(S.money.reserved):null;
+   return {
+     date:dateKey,
+     prayers:Object.assign({},S.prayers),
+     money:{
+       balance:S.money?S.money.balance:null,
+       reserved:S.money?S.money.reserved:null,
+       available:available
+     },
+     sleep:{
+       lastSleep:S.sleepData?S.sleepData.lastSleep:null,
+       lastWake:S.sleepData?S.sleepData.lastWake:null,
+       lastDuration:S.sleepData?S.sleepData.lastDuration:null
+     },
+     xpEnd:S.xp,
+     levelEnd:S.level,
+     savedAt:new Date().toISOString()
+   };
+ }
+ function rolloverDayIfNeeded(){
+   const today=riyadhDateKey();
+   if(!S.lastActiveDate){
+     S.lastActiveDate=today;
+     save();
+     return false;
+   }
+   if(S.lastActiveDate===today)return false;
+   const previous=S.lastActiveDate;
+   const already=S.dailyHistory.some(d=>d&&d.date===previous);
+   if(!already)S.dailyHistory.push(snapshotCurrentDay(previous));
+   if(S.dailyHistory.length>90)S.dailyHistory=S.dailyHistory.slice(-90);
+   S.prayers={fajr:null,dhuhr:null,asr:null,maghrib:null,isha:null};
+   S.daily={tasks:[],states:{}};
+   S.lastActiveDate=today;
+   save();
+   return true;
+ }
  function save(){localStorage.setItem(STORE,JSON.stringify(S))}
+ const didDailyReset=rolloverDayIfNeeded();
  function toast(t){const e=$("#toast");e.innerHTML="<strong>[ النظام ]</strong><br>"+t;e.classList.add("show");setTimeout(()=>e.classList.remove("show"),1800)}
  function addXp(x){
    S.xp+=x;
@@ -472,6 +523,7 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
    });
  }
  render();
+ if(didDailyReset)toast("يوم جديد · تم تصفير حالات اليوم مع حفظ تقدمك وسجل اليوم السابق.");
  if("serviceWorker" in navigator){
    navigator.serviceWorker.getRegistrations().then(regs=>regs.forEach(r=>r.unregister())).catch(()=>{});
  }
