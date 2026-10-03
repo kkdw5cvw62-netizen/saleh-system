@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#030711">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="نظام صالح">
+<link rel="manifest" href="manifest.webmanifest">
+<title>نظام صالح — اللاعب الواقعي v1.1</title>
+<style>
+:root{
+ --bg:#03060d;--panel:#09111f;--cyan:#63edff;--violet:#987dff;--gold:#ffd36a;
+ --green:#69efb0;--red:#ff6d86;--orange:#ffb45c;--text:#effbff;--muted:#8ea4b8;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:rgba(99,237,255,.12)}
+html{scroll-behavior:smooth}
+body{
+ margin:0;min-height:100dvh;color:var(--text);
+ font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Tahoma,Arial,sans-serif;
+ background:
+ radial-gradient(circle at 50% -8%,rgba(69,110,255,.22),transparent 28%),
+ radial-gradient(circle at 95% 17%,rgba(99,237,255,.08),transparent 22%),
+ linear-gradient(180deg,#050814,#02040a 72%);
+}
+.app{max-width:520px;margin:auto;padding:calc(env(safe-area-inset-top) + 12px) 14px calc(env(safe-area-inset-bottom) + 94px)}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.id{display:flex;align-items:center;gap:10px}
+.avatar{width:46px;height:46px;border:1px solid rgba(99,237,255,.35);border-radius:14px;display:grid;place-items:center;color:var(--cyan);font-weight:900}
+.chip{font-size:9px;color:var(--green);border:1px solid rgba(105,239,176,.28);border-radius:999px;padding:7px 9px}
+.hero,.card{
+ border:1px solid rgba(99,237,255,.15);border-radius:18px;padding:15px;margin-bottom:12px;
+ background:linear-gradient(180deg,rgba(12,21,37,.96),rgba(7,13,24,.96));
+ box-shadow:0 0 28px rgba(99,237,255,.06)
+}
+.hero{border-color:rgba(99,237,255,.28)}
+.levelrow{display:flex;justify-content:space-between;align-items:flex-end}
+.level{font-size:40px;font-weight:950}.rank{font-size:44px;font-weight:950;color:var(--cyan)}
+.muted{color:var(--muted)}.small{font-size:10px}.rsub{font-size:9px;color:var(--muted);line-height:1.65;margin-top:4px}
+.bar{height:8px;border:1px solid rgba(99,237,255,.14);border-radius:999px;background:#050c16;overflow:hidden;margin-top:7px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--violet),var(--cyan));box-shadow:0 0 14px rgba(99,237,255,.4);transition:width .3s}
+.section{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.section h2{font-size:18px;margin:0}.section span{font-size:9px;color:var(--muted)}
+.page{padding-top:6px;scroll-margin-top:10px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid rgba(142,164,184,.09)}.row:last-child{border-bottom:0}
+.btn,.navbtn,summary{
+ display:inline-flex;align-items:center;justify-content:center;min-height:46px;
+ border:1px solid rgba(99,237,255,.28);background:rgba(99,237,255,.055);
+ color:var(--text);border-radius:13px;padding:10px 13px;font-size:11px;font-weight:800;
+ text-decoration:none;touch-action:manipulation;cursor:pointer;
+}
+.btn:active,.navbtn:active,summary:active{transform:scale(.97);background:rgba(99,237,255,.12)}
+.good{border-color:rgba(105,239,176,.32)!important;color:var(--green)!important}
+.bad{border-color:rgba(255,109,134,.32)!important;color:var(--red)!important}
+.gold{border-color:rgba(255,211,106,.32)!important;color:var(--gold)!important}
+.tag{font-size:9px;border:1px solid rgba(152,125,255,.24);color:#cdc5ff;padding:5px 7px;border-radius:999px;background:rgba(152,125,255,.04);white-space:nowrap}
+.tag.good{color:var(--green);border-color:rgba(105,239,176,.28)}
+.tag.gold{color:var(--gold);border-color:rgba(255,211,106,.28)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.tile{border:1px solid rgba(99,237,255,.13);border-radius:14px;padding:12px;background:rgba(99,237,255,.025)}
+.system{padding:13px 14px;border-right:3px solid var(--cyan);border-radius:10px 14px 14px 10px;background:rgba(99,237,255,.045);font-size:10px;line-height:1.8}
+.questnow{border:1px solid rgba(99,237,255,.25);border-radius:17px;padding:15px;background:linear-gradient(145deg,rgba(99,237,255,.07),rgba(152,125,255,.04),rgba(7,13,24,.95))}
+.questnow h3{font-size:19px;margin:6px 0}.questnow p{font-size:10px;color:var(--muted);line-height:1.8;margin:0 0 10px}
+.priority{border:1px solid rgba(255,211,106,.18);border-radius:15px;padding:12px;background:rgba(255,211,106,.025);margin-bottom:9px}.priority h3{font-size:12px;margin:4px 0}.priority p{font-size:9px;color:var(--muted);line-height:1.65;margin:0}
+.stat{margin:10px 0}.statline{display:flex;justify-content:space-between;font-size:10px;margin-bottom:5px}
+.rule{border:1px solid rgba(99,237,255,.11);border-radius:14px;padding:12px;margin-bottom:9px;background:rgba(99,237,255,.02)}.rule:last-child{margin-bottom:0}.rule strong{font-size:11px}.rule p{font-size:9px;color:var(--muted);line-height:1.75;margin:5px 0 0}
+.bottom{
+ position:fixed;z-index:40;left:50%;transform:translateX(-50%);bottom:0;width:min(100%,520px);
+ display:grid;grid-template-columns:repeat(5,1fr);gap:4px;
+ padding:8px 10px calc(env(safe-area-inset-bottom) + 8px);
+ background:rgba(3,6,13,.96);backdrop-filter:blur(18px);border-top:1px solid rgba(99,237,255,.12)
+}
+.navbtn{border:0;background:transparent;color:#788b9d;min-height:54px;padding:5px;font-size:9px;flex-direction:column;gap:3px}
+.navbtn span:first-child{font-size:18px}
+.wcircle{width:86px;height:86px;border-radius:50%;display:grid;place-items:center;margin:4px auto 12px;border:1px solid rgba(99,237,255,.32);background:radial-gradient(circle,rgba(99,237,255,.09),rgba(99,237,255,.01) 65%)}
+.wcircle strong{font-size:24px}
+.goal{border:1px solid rgba(152,125,255,.18);border-radius:14px;padding:12px;margin-bottom:9px;background:rgba(152,125,255,.025)}.goal:last-child{margin-bottom:0}
+.enemy{border:1px solid rgba(255,109,134,.16);border-radius:14px;padding:12px;margin-bottom:9px;background:rgba(255,109,134,.02)}.enemy:last-child{margin-bottom:0}
+.enemy strong{font-size:12px}.enemy p{font-size:9px;color:var(--muted);line-height:1.65;margin:5px 0 0}
+.toast{position:fixed;z-index:90;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom) + 82px);max-width:496px;margin:auto;display:none;border:1px solid rgba(99,237,255,.28);border-radius:14px;padding:12px 14px;background:#081321ee;font-size:11px}.toast.show{display:block}
+</style>
+</head>
+<body>
+<div class="app">
+
+<header class="top">
+ <div class="id"><div class="avatar">ص</div><div><div class="small muted">النظام الشخصي</div><strong>صالح</strong></div></div>
+ <div class="chip">● خاص بك فقط</div>
+</header>
+
+<section id="status" class="page">
+ <div class="hero">
+  <div class="levelrow">
+   <div><div class="small muted">المستوى العام</div><div class="level" id="level">01</div></div>
+   <div style="text-align:left"><div class="small muted">الرتبة</div><div class="rank" id="rank">E</div></div>
+  </div>
+  <div class="small muted" style="margin-top:14px">نقاط الخبرة <span id="xpText">0 / 1000</span></div>
+  <div class="bar"><i id="xpBar" style="width:0%"></i></div>
+  <div class="tag gold" style="margin-top:11px">اللقب: <span id="titleText">المبتدئ</span></div>
+ </div>
+
+ <div class="questnow" style="margin-bottom:12px">
+  <div class="small muted">وش تسوي الآن؟</div>
+  <h3 id="nowTitle">صلِّ الصلاة الحالية أولًا</h3>
+  <p id="nowWhy">في نظامك الشخصي العبادة أعلى أولوية، وبعدها يوازن النظام بين النوم والمال والوقت والطاقة.</p>
+  <div class="tag good" id="nextAction">بعدها: أهم مهمة واحدة فقط</div>
+ </div>
+
+ <div class="grid">
+  <a class="tile" href="#worship" style="color:inherit;text-decoration:none"><div class="small muted">الأولوية الأولى</div><strong>العبادة</strong></a>
+  <a class="tile" href="#life" style="color:inherit;text-decoration:none"><div class="small muted">أساس الحياة</div><strong>النوم + المال</strong></a>
+ </div>
+
+ <div class="card" style="margin-top:12px">
+  <div class="section"><h2>سماتك الأساسية</h2><span>ليست عامة</span></div>
+  <div id="stats"></div>
+ </div>
+</section>
+
+<section id="worship" class="page" style="margin-top:28px">
+ <div class="section"><h2>العبادة</h2><span>الفئة S</span></div>
+ <div class="card">
+  <div class="wcircle"><strong><span id="prayCount">0</span>/5</strong></div>
+  <div class="row"><div><strong>الفجر</strong><div class="rsub">في الوقت = +100 XP عام</div></div><button class="btn good jsPrayer" data-id="fajr">في الوقت</button></div>
+  <div class="row"><div><strong>الظهر</strong></div><button class="btn good jsPrayer" data-id="dhuhr">في الوقت</button></div>
+  <div class="row"><div><strong>العصر</strong></div><button class="btn good jsPrayer" data-id="asr">في الوقت</button></div>
+  <div class="row"><div><strong>المغرب</strong></div><button class="btn good jsPrayer" data-id="maghrib">في الوقت</button></div>
+  <div class="row"><div><strong>العشاء</strong></div><button class="btn good jsPrayer" data-id="isha">في الوقت</button></div>
+ </div>
+
+ <div class="card">
+  <div class="system">
+   عندك قاعدة ثابتة: <strong>العبادة هي المجال الوحيد تقريبًا الذي قد ينقص XP عند التقصير المتعمد.</strong>
+   الأعذار لا تعاقب، والنوافل تعطي مكافآت ولا تعاقب عند تركها.
+  </div>
+ </div>
+</section>
+
+<section id="life" class="page" style="margin-top:28px">
+ <div class="section"><h2>أساس حياتك</h2><span>قواعدك الشخصية</span></div>
+
+ <div class="priority">
+  <span class="tag gold">النوم</span>
+  <h3>المرجع: 10:00ص → 6:00م</h3>
+  <p>إذا اختل يوم واحد لا نغيّر النظام كاملًا. نرتب اليوم حسب استيقاظك الحقيقي ثم نرجع تدريجيًا للمرجع.</p>
+ </div>
+
+ <div class="priority">
+  <span class="tag gold">المال</span>
+  <h3>المتاح الحقيقي = الرصيد − المحجوز</h3>
+  <p>وجود المال في الحساب لا يعني أنه متاح. الالتزامات تتقدم على الطلعات والمشتريات.</p>
+ </div>
+
+ <div class="priority">
+  <span class="tag gold">الوقت</span>
+  <h3>لا يوجد جدول فوق موعد موجود</h3>
+  <p>التقويم أولًا. نبحث عن الفراغ الحقيقي ونترك مساحة للراحة بدل حشر اليوم بالكامل.</p>
+ </div>
+
+ <div class="priority">
+  <span class="tag gold">المشروع</span>
+  <h3>TradingEngine = «وقت للمشروع» فقط</h3>
+  <p>هذا النظام لا يدخل في تفاصيل المشروع التقنية. المشروع له محادثاته وقسمه الخاص.</p>
+ </div>
+</section>
+
+<section id="goals" class="page" style="margin-top:28px">
+ <div class="section"><h2>مساراتك الحالية</h2><span>شخصية لك</span></div>
+
+ <div class="goal">
+  <span class="tag good">Main Quest</span>
+  <strong>ثبات الحياة</strong>
+  <div class="rsub">الصلاة → النوم → المال → العمل/الدخل → النمو.</div>
+ </div>
+
+ <div class="goal">
+  <span class="tag">النمو</span>
+  <strong>التعلم والمهارات</strong>
+  <div class="rsub">نبني مهارات عملية بدون أن تسرق النوم أو الالتزامات.</div>
+ </div>
+
+ <div class="goal">
+  <span class="tag">اللياقة</span>
+  <strong>النادي</strong>
+  <div class="rsub">نشاط مرن، ولا يوضع بطريقة تضر النوم أو التزامات اليوم.</div>
+ </div>
+
+ <div class="goal">
+  <span class="tag">الحياة</span>
+  <strong>العائلة · الأصدقاء · الراحة</strong>
+  <div class="rsub">تدخل في اليوم كجزء طبيعي، وليست وقتًا ضائعًا تلقائيًا.</div>
+ </div>
+</section>
+
+<section id="inner" class="page" style="margin-top:28px">
+ <div class="section"><h2>العالم الداخلي</h2><span>أعداؤك أنت</span></div>
+
+ <div class="enemy">
+  <span class="tag bad">التسويف</span>
+  <strong>«بعد شوي»</strong>
+  <p>المواجهة: قم خلال 60 ثانية أو ابدأ بدقيقتين فقط.</p>
+ </div>
+
+ <div class="enemy">
+  <span class="tag bad">المشتتات</span>
+  <strong>التمرير بلا نهاية</strong>
+  <p>المواجهة: مؤقت قصير ثم إبعاد الجوال.</p>
+ </div>
+
+ <div class="enemy">
+  <span class="tag bad">المال</span>
+  <strong>الصرف الاندفاعي</strong>
+  <p>المواجهة: راجع المتاح الحقيقي قبل أي شراء غير ضروري.</p>
+ </div>
+
+ <div class="enemy">
+  <span class="tag bad">العقل</span>
+  <strong>التفكير الزائد</strong>
+  <p>المواجهة: لا تحل حياتك كلها؛ حدد الخطوة التالية فقط.</p>
+ </div>
+</section>
+
+</div>
+
+<nav class="bottom">
+ <a class="navbtn" href="#status"><span>◈</span><span>الحالة</span></a>
+ <a class="navbtn" href="#worship"><span>◉</span><span>العبادة</span></a>
+ <a class="navbtn" href="#life"><span>▣</span><span>الحياة</span></a>
+ <a class="navbtn" href="#goals"><span>◆</span><span>المسارات</span></a>
+ <a class="navbtn" href="#inner"><span>⚠</span><span>العالم</span></a>
+</nav>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+ const STORE="saleh_rps_v11";
+ const defaults={
+   level:1,xp:0,title:"المبتدئ",
+   prayers:{fajr:false,dhuhr:false,asr:false,maghrib:false,isha:false},
+   sleep:80,finance:70,discipline:50,focus:50
+ };
+ let S=JSON.parse(localStorage.getItem(STORE)||"null")||JSON.parse(JSON.stringify(defaults));
+ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+ const need=l=>1000+(l-1)*350;
+ const rank=l=>l>=70?"S":l>=50?"A":l>=35?"B":l>=20?"C":l>=10?"D":"E";
+ function save(){localStorage.setItem(STORE,JSON.stringify(S))}
+ function toast(t){const e=$("#toast");e.innerHTML="<strong>[ النظام ]</strong><br>"+t;e.classList.add("show");setTimeout(()=>e.classList.remove("show"),1800)}
+ function addXp(x){
+   S.xp+=x;
+   while(S.xp>=need(S.level)){S.xp-=need(S.level);S.level++;toast("ارتقاء مستوى → "+S.level)}
+ }
+ function render(){
+   $("#level").textContent=String(S.level).padStart(2,"0");
+   $("#rank").textContent=rank(S.level);
+   $("#xpText").textContent=S.xp+" / "+need(S.level);
+   $("#xpBar").style.width=Math.min(100,S.xp/need(S.level)*100)+"%";
+   $("#titleText").textContent=S.title;
+   const pc=Object.values(S.prayers).filter(Boolean).length;
+   $("#prayCount").textContent=pc;
+   const stats=[
+    ["ثبات العبادة",Math.round(pc/5*100)],
+    ["ثبات النوم",S.sleep],
+    ["التحكم المالي",S.finance],
+    ["الانضباط",S.discipline],
+    ["التركيز",S.focus]
+   ];
+   $("#stats").innerHTML=stats.map(x=>`<div class="stat"><div class="statline"><span>${x[0]}</span><span>${x[1]}%</span></div><div class="bar"><i style="width:${x[1]}%"></i></div></div>`).join("");
+   $$(".jsPrayer").forEach(b=>{const d=S.prayers[b.dataset.id];b.disabled=d;b.textContent=d?"✓ مسجلة":"في الوقت"});
+   if(pc<5){$("#nowTitle").textContent="ثبّت الصلاة الحالية أولًا";$("#nowWhy").textContent="العبادة أعلى أولوية في نظامك الشخصي، ثم يعاد ترتيب بقية اليوم."}
+   else{$("#nowTitle").textContent="انتقل لأهم مهمة في يومك";$("#nowWhy").textContent="الصلاة مستقرة اليوم. اختر أهم التزام أو مهمة واحدة فقط."}
+ }
+ $$(".jsPrayer").forEach(b=>b.addEventListener("click",()=>{
+   const id=b.dataset.id;if(S.prayers[id])return;
+   S.prayers[id]=true;addXp(100);S.discipline=Math.min(100,S.discipline+2);save();render();toast("+100 XP · صلاة في الوقت")
+ }));
+ render();
+})();
+</script>
+</body>
+</html>
