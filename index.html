@@ -379,7 +379,7 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
  if(!Array.isArray(S.dailyHistory))S.dailyHistory=[];
  if(S.money.balance===""||Number.isNaN(Number(S.money.balance)))S.money.balance=null;
  if(S.money.reserved===""||Number.isNaN(Number(S.money.reserved)))S.money.reserved=null;
- const $=s=>document.querySelector(s), $=s=>[...document.querySelectorAll(s)];
+ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
  const DB_NAME="saleh_life_database";
  const DB_VERSION=1;
  const DB_STORES=["events","days","prayers","sleep_sessions","transactions","xp_events","meta"];
@@ -860,7 +860,7 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
      const range=e.target.closest("[data-days]");
      if(range){
        historyRangeDays=Number(range.dataset.days)||7;
-       $("#historyTabs .btn").forEach(b=>b.classList.toggle("active",b===range));
+       $$("#historyTabs .btn").forEach(b=>b.classList.toggle("active",b===range));
        renderHistory();
      }
      if(e.target.closest("#exportBackupBtn")){e.preventDefault();exportBackup();}
