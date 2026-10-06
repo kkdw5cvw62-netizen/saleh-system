@@ -379,13 +379,261 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
  if(!Array.isArray(S.dailyHistory))S.dailyHistory=[];
  if(S.money.balance===""||Number.isNaN(Number(S.money.balance)))S.money.balance=null;
  if(S.money.reserved===""||Number.isNaN(Number(S.money.reserved)))S.money.reserved=null;
- const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
- const need=l=>1000+(l-1)*350;
- const rank=l=>l>=70?"S":l>=50?"A":l>=35?"B":l>=20?"C":l>=10?"D":"E";
- function riyadhDateKey(){
-   const parts=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Riyadh",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
+ const $=s=>document.querySelector(s), $=s=>[...document.querySelectorAll(s)];
+ const DB_NAME="saleh_life_database";
+ const DB_VERSION=1;
+ const DB_STORES=["events","days","prayers","sleep_sessions","transactions","xp_events","meta"];
+ let dbPromise=null;
+ let historyRangeDays=7;
+
+ function makeId(prefix){return prefix+"-"+Date.now()+"-"+Math.random().toString(36).slice(2,9);}
+ function openLifeDB(){
+   if(!("indexedDB" in window))return Promise.reject(new Error("IndexedDB غير مدعوم"));
+   if(dbPromise)return dbPromise;
+   dbPromise=new Promise((resolve,reject)=>{
+     const req=indexedDB.open(DB_NAME,DB_VERSION);
+     req.onupgradeneeded=()=>{
+       const db=req.result;
+       const make=(name,keyPath)=>{
+         if(db.objectStoreNames.contains(name))return req.transaction.objectStore(name);
+         return db.createObjectStore(name,{keyPath:keyPath});
+       };
+       let s=make("events","id");
+       if(!s.indexNames.contains("date"))s.createIndex("date","date",{unique:false});
+       if(!s.indexNames.contains("type"))s.createIndex("type","type",{unique:false});
+       if(!s.indexNames.contains("ts"))s.createIndex("ts","ts",{unique:false});
+       s=make("days","date");
+       s=make("prayers","id");
+       if(!s.indexNames.contains("date"))s.createIndex("date","date",{unique:false});
+       if(!s.indexNames.contains("prayer"))s.createIndex("prayer","prayer",{unique:false});
+       if(!s.indexNames.contains("state"))s.createIndex("state","state",{unique:false});
+       s=make("sleep_sessions","id");
+       if(!s.indexNames.contains("date"))s.createIndex("date","date",{unique:false});
+       s=make("transactions","id");
+       if(!s.indexNames.contains("date"))s.createIndex("date","date",{unique:false});
+       if(!s.indexNames.contains("kind"))s.createIndex("kind","kind",{unique:false});
+       s=make("xp_events","id");
+       if(!s.indexNames.contains("date"))s.createIndex("date","date",{unique:false});
+       if(!s.indexNames.contains("source"))s.createIndex("source","source",{unique:false});
+       make("meta","key");
+     };
+     req.onsuccess=()=>resolve(req.result);
+     req.onerror=()=>reject(req.error||new Error("تعذر فتح قاعدة البيانات"));
+   });
+   return dbPromise;
+ }
+ async function dbPut(storeName,value){
+   const db=await openLifeDB();
+   return new Promise((resolve,reject)=>{
+     const tx=db.transaction(storeName,"readwrite");
+     tx.objectStore(storeName).put(value);
+     tx.oncomplete=()=>resolve(value);
+     tx.onerror=()=>reject(tx.error);
+   });
+ }
+ async function dbGet(storeName,key){
+   const db=await openLifeDB();
+   return new Promise((resolve,reject)=>{
+     const req=db.transaction(storeName,"readonly").objectStore(storeName).get(key);
+     req.onsuccess=()=>resolve(req.result||null);
+     req.onerror=()=>reject(req.error);
+   });
+ }
+ async function dbGetAll(storeName){
+   const db=await openLifeDB();
+   return new Promise((resolve,reject)=>{
+     const req=db.transaction(storeName,"readonly").objectStore(storeName).getAll();
+     req.onsuccess=()=>resolve(req.result||[]);
+     req.onerror=()=>reject(req.error);
+   });
+ }
+ async function dbClear(storeName){
+   const db=await openLifeDB();
+   return new Promise((resolve,reject)=>{
+     const tx=db.transaction(storeName,"readwrite");
+     tx.objectStore(storeName).clear();
+     tx.oncomplete=()=>resolve();
+     tx.onerror=()=>reject(tx.error);
+   });
+ }
+ function eventTimeISO(){return new Date().toISOString();}
+ function recordEvent(type,label,payload,xpDelta){
+   const row={id:makeId("evt"),date:riyadhDateKey(),ts:eventTimeISO(),type:type,label:label,payload:payload||{},xpDelta:Number(xpDelta)||0};
+   dbPut("events",row).then(()=>{persistCurrentDaySnapshot();renderHistory();}).catch(()=>{});
+   return row;
+ }
+ function recordPrayer(prayer,state,xpDelta){
+   const ts=eventTimeISO(),date=riyadhDateKey();
+   dbPut("prayers",{id:makeId("prayer"),date:date,ts:ts,prayer:prayer,state:state,xpDelta:Number(xpDelta)||0}).catch(()=>{});
+   const names={fajr:"الفجر",dhuhr:"الظهر",asr:"العصر",maghrib:"المغرب",isha:"العشاء"};
+   const states={ontime:"في الوقت",late:"متأخرة",excused:"عذر",missed:"فاتت بتقصير"};
+   recordEvent("prayer",names[prayer]+" · "+states[state],{prayer:prayer,state:state},xpDelta);
+ }
+ function recordTransaction(kind,amount,note,tsMs){
+   const ts=new Date(tsMs||Date.now()).toISOString(),date=riyadhDateKey(new Date(tsMs||Date.now()));
+   dbPut("transactions",{id:makeId("tx"),date:date,ts:ts,kind:kind,amount:Number(amount)||0,note:note||""}).catch(()=>{});
+   if(kind==="expense")recordEvent("expense","مصروف · "+(note||"بدون وصف"),{amount:Number(amount)||0,note:note||""},0);
+ }
+ function recordSleep(start,wake,duration,xpDelta){
+   const ts=eventTimeISO(),date=riyadhDateKey();
+   dbPut("sleep_sessions",{id:makeId("sleep"),date:date,ts:ts,start:start,wake:wake,duration:Number(duration)||0,xpDelta:Number(xpDelta)||0}).catch(()=>{});
+   recordEvent("sleep","نوم · "+duration+" ساعة",{start:start,wake:wake,duration:duration},xpDelta);
+ }
+ function recordXp(delta,source,meta){
+   if(!delta)return;
+   dbPut("xp_events",{id:makeId("xp"),date:riyadhDateKey(),ts:eventTimeISO(),delta:Number(delta),source:source||"system",meta:meta||{},level:S.level}).then(()=>renderHistory()).catch(()=>{});
+ }
+ async function persistCurrentDaySnapshot(){
+   try{
+     const snap=snapshotCurrentDay(riyadhDateKey());
+     snap.status="open";
+     await dbPut("days",snap);
+   }catch(e){}
+ }
+ async function migrateLegacyToDB(){
+   const done=await dbGet("meta","legacyMigrationV1").catch(()=>null);
+   if(done)return;
+   for(const d of (S.dailyHistory||[])){
+     if(!d||!d.date)continue;
+     await dbPut("days",Object.assign({status:"closed"},d)).catch(()=>{});
+     if(d.prayers){
+       for(const k of prayerKeys){
+         const st=d.prayers[k];
+         if(!st)continue;
+         await dbPut("prayers",{id:"legacy-prayer-"+d.date+"-"+k,date:d.date,ts:d.savedAt||d.date+"T12:00:00Z",prayer:k,state:st,xpDelta:0,legacy:true}).catch(()=>{});
+       }
+     }
+   }
+   for(let i=0;i<(S.money.expenses||[]).length;i++){
+     const e=S.money.expenses[i];if(!e||!e.ts)continue;
+     const d=riyadhDateKey(new Date(e.ts));
+     await dbPut("transactions",{id:"legacy-expense-"+e.ts+"-"+i,date:d,ts:new Date(e.ts).toISOString(),kind:"expense",amount:Number(e.amount)||0,note:e.note||"مصروف",legacy:true}).catch(()=>{});
+   }
+   await dbPut("meta",{key:"legacyMigrationV1",value:true,at:eventTimeISO()}).catch(()=>{});
+ }
+ function riyadhDateKeyFromDate(date){
+   const parts=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Riyadh",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(date);
    const o={};parts.forEach(p=>{if(p.type!=="literal")o[p.type]=p.value;});
    return o.year+"-"+o.month+"-"+o.day;
+ }
+ function dateKeyDaysAgo(days){return riyadhDateKeyFromDate(new Date(Date.now()-days*86400000));}
+ function historyDateKeys(days){
+   const out=[];for(let i=days-1;i>=0;i--)out.push(dateKeyDaysAgo(i));return out;
+ }
+ function formatEventClock(iso){
+   try{return new Intl.DateTimeFormat("ar-SA",{timeZone:"Asia/Riyadh",hour:"numeric",minute:"2-digit"}).format(new Date(iso));}catch(e){return "";}
+ }
+ function formatShortDate(key){const p=String(key).split("-");return p.length===3?p[2]+"/"+p[1]:key;}
+ function drawEmptyChart(svg,text){
+   if(!svg)return;
+   svg.innerHTML='<text x="160" y="76" text-anchor="middle" fill="#8ea4b8" font-size="10">'+escapeHtml(text)+'</text>';
+ }
+ function drawSleepChart(rows,days){
+   const svg=$("#sleepChart");if(!svg)return;
+   const by={};rows.forEach(r=>{if(r.duration>0){if(!by[r.date])by[r.date]=[];by[r.date].push(Number(r.duration));}});
+   const keys=historyDateKeys(days);
+   const pts=keys.map((k,i)=>({k:k,v:by[k]?by[k].reduce((a,b)=>a+b,0)/by[k].length:null,i:i})).filter(x=>x.v!==null);
+   if(!pts.length){drawEmptyChart(svg,"سجّل نومك لتظهر البيانات هنا");return;}
+   const max=Math.max(10,...pts.map(x=>x.v));
+   const x=i=>days===1?160:12+(i/(days-1))*296;
+   const y=v=>132-(Math.min(max,v)/max)*112;
+   const points=pts.map(p=>x(p.i).toFixed(1)+","+y(p.v).toFixed(1)).join(" ");
+   const targetY=y(8);
+   svg.innerHTML='<line x1="10" y1="'+targetY+'" x2="310" y2="'+targetY+'" stroke="#ffd36a" stroke-width="1" stroke-dasharray="4 4" opacity=".55"/>'+
+    '<polyline points="'+points+'" fill="none" stroke="#63edff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>'+
+    pts.map(p=>'<circle cx="'+x(p.i)+'" cy="'+y(p.v)+'" r="3" fill="#63edff"><title>'+formatShortDate(p.k)+' · '+p.v.toFixed(1)+' س</title></circle>').join("")+
+    '<text x="8" y="15" fill="#8ea4b8" font-size="8">'+max.toFixed(0)+'س</text><text x="8" y="137" fill="#8ea4b8" font-size="8">0</text>';
+ }
+ function drawSpendChart(rows,days){
+   const svg=$("#spendChart");if(!svg)return;
+   const by={};rows.filter(r=>r.kind==="expense").forEach(r=>{by[r.date]=(by[r.date]||0)+Number(r.amount||0);});
+   const keys=historyDateKeys(days),vals=keys.map(k=>({k:k,v:by[k]||0}));
+   const max=Math.max(...vals.map(x=>x.v),0);
+   if(max<=0){drawEmptyChart(svg,"سجّل مصروفاتك لتظهر البيانات هنا");return;}
+   const gap=2,w=Math.max(1,(296/days)-gap);
+   svg.innerHTML=vals.map((p,i)=>{
+     const h=(p.v/max)*112,x=12+(i/days)*296,y=132-h;
+     return '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h.toFixed(1)+'" rx="1.5" fill="#987dff" opacity=".85"><title>'+formatShortDate(p.k)+' · '+p.v.toLocaleString("ar-SA")+' ر.س</title></rect>';
+   }).join("")+'<text x="8" y="15" fill="#8ea4b8" font-size="8">'+max.toLocaleString("ar-SA")+'</text><text x="8" y="137" fill="#8ea4b8" font-size="8">0</text>';
+ }
+ async function renderHistory(){
+   if(!$("#history"))return;
+   try{
+     const [prayers,sleeps,txs,xps,events]=await Promise.all([
+       dbGetAll("prayers"),dbGetAll("sleep_sessions"),dbGetAll("transactions"),dbGetAll("xp_events"),dbGetAll("events")
+     ]);
+     const cutoff=dateKeyDaysAgo(historyRangeDays-1);
+     const pf=prayers.filter(r=>r.date>=cutoff),sf=sleeps.filter(r=>r.date>=cutoff),tf=txs.filter(r=>r.date>=cutoff),xf=xps.filter(r=>r.date>=cutoff),ef=events.filter(r=>r.date>=cutoff);
+     const eligible=pf.filter(r=>r.state!=="excused"),ontime=eligible.filter(r=>r.state==="ontime").length;
+     const prayerPct=eligible.length?Math.round(ontime/eligible.length*100):null;
+     const sleepAvg=sf.length?sf.reduce((n,r)=>n+Number(r.duration||0),0)/sf.length:null;
+     const spend=tf.filter(r=>r.kind==="expense").reduce((n,r)=>n+Number(r.amount||0),0);
+     const xp=xf.reduce((n,r)=>n+Number(r.delta||0),0);
+     $("#histPrayer").textContent=prayerPct===null?"—":prayerPct+"%";
+     $("#histSleep").textContent=sleepAvg===null?"—":sleepAvg.toFixed(1)+"س";
+     $("#histSpend").textContent=fmtMoney(spend);
+     $("#histXp").textContent=(xp>0?"+":"")+xp;
+     $("#historyRangeLabel").textContent="آخر "+historyRangeDays+" أيام";
+     $("#dbStatus").textContent="قاعدة البيانات تعمل · "+(prayers.length+sleeps.length+txs.length+xps.length+events.length)+" سجل";
+     drawSleepChart(sf,historyRangeDays);
+     drawSpendChart(tf,historyRangeDays);
+     $("#sleepTrendText").textContent=sleepAvg===null?"":"المتوسط "+sleepAvg.toFixed(1)+" ساعة";
+     $("#spendTrendText").textContent=spend?"إجمالي الفترة "+fmtMoney(spend):"";
+     const counts={ontime:0,late:0,excused:0,missed:0};pf.forEach(r=>{if(counts[r.state]!==undefined)counts[r.state]++;});
+     const maxCount=Math.max(1,...Object.values(counts));
+     const names={ontime:"في الوقت",late:"متأخرة",excused:"عذر",missed:"تقصير"};
+     $("#prayerSummary").innerHTML=Object.keys(counts).map(k=>'<div class="sumRow"><span>'+names[k]+'</span><div class="sumTrack"><i style="width:'+(counts[k]/maxCount*100)+'%"></i></div><strong>'+counts[k]+'</strong></div>').join("");
+     const latest=ef.sort((a,b)=>String(b.ts).localeCompare(String(a.ts))).slice(0,25);
+     $("#eventFeed").innerHTML=latest.length?latest.map(e=>{
+       const xpText=e.xpDelta?(' · '+(e.xpDelta>0?'+':'')+e.xpDelta+' XP'):'';
+       return '<div class="eventItem"><strong>'+escapeHtml(e.label||e.type)+'</strong><div class="meta">'+formatShortDate(e.date)+' · '+formatEventClock(e.ts)+xpText+'</div></div>';
+     }).join(""):'<div class="rsub">لا توجد أحداث مسجلة في هذه الفترة.</div>';
+   }catch(e){
+     if($("#dbStatus"))$("#dbStatus").textContent="تعذر قراءة قاعدة البيانات على هذا المتصفح.";
+   }
+ }
+ async function exportBackup(){
+   try{
+     const database={};
+     for(const name of DB_STORES)database[name]=await dbGetAll(name);
+     const backup={schema:"saleh-life-backup-v1",exportedAt:eventTimeISO(),state:S,database:database};
+     const blob=new Blob([JSON.stringify(backup,null,2)],{type:"application/json"});
+     const url=URL.createObjectURL(blob),a=document.createElement("a");
+     a.href=url;a.download="Saleh-System-Backup-"+riyadhDateKey()+".json";document.body.appendChild(a);a.click();a.remove();
+     setTimeout(()=>URL.revokeObjectURL(url),1000);toast("تم تجهيز النسخة الاحتياطية.");
+   }catch(e){toast("تعذر تصدير النسخة الاحتياطية.");}
+ }
+ async function importBackupFile(file){
+   try{
+     const raw=await file.text(),backup=JSON.parse(raw);
+     if(!backup||backup.schema!=="saleh-life-backup-v1"||!backup.state)throw new Error("invalid");
+     if(!confirm("سيتم استبدال بيانات النظام الحالية بهذه النسخة. هل تريد المتابعة؟"))return;
+     for(const name of DB_STORES)await dbClear(name);
+     const database=backup.database||{};
+     for(const name of DB_STORES){
+       for(const row of (database[name]||[]))await dbPut(name,row);
+     }
+     S=backup.state;
+     localStorage.setItem(STORE,JSON.stringify(S));
+     toast("تمت الاستعادة. سيتم تحديث الصفحة.");
+     setTimeout(()=>location.reload(),500);
+   }catch(e){toast("ملف النسخة الاحتياطية غير صالح.");}
+ }
+ async function initLifeDatabase(){
+   try{
+     await openLifeDB();
+     await migrateLegacyToDB();
+     await persistCurrentDaySnapshot();
+     if(didDailyReset)recordEvent("day_reset","بداية يوم جديد",{previousDate:S.dailyHistory.length?S.dailyHistory[S.dailyHistory.length-1].date:null},0);
+     await renderHistory();
+   }catch(e){
+     if($("#dbStatus"))$("#dbStatus").textContent="قاعدة البيانات غير متاحة؛ بيانات التشغيل الحالية ما زالت محفوظة محليًا.";
+   }
+ }
+ const need=l=>1000+(l-1)*350;
+ const rank=l=>l>=70?"S":l>=50?"A":l>=35?"B":l>=20?"C":l>=10?"D":"E";
+ function riyadhDateKey(date){
+   return riyadhDateKeyFromDate(date||new Date());
  }
  function snapshotCurrentDay(dateKey){
    const available=(S.money&&S.money.balance!==null&&S.money.reserved!==null)?Number(S.money.balance)-Number(S.money.reserved):null;
@@ -428,9 +676,15 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
  function save(){localStorage.setItem(STORE,JSON.stringify(S))}
  const didDailyReset=rolloverDayIfNeeded();
  function toast(t){const e=$("#toast");e.innerHTML="<strong>[ النظام ]</strong><br>"+t;e.classList.add("show");setTimeout(()=>e.classList.remove("show"),1800)}
- function addXp(x){
+ function addXp(x,source,meta){
+   const before=S.level;
    S.xp+=x;
-   while(S.xp>=need(S.level)){S.xp-=need(S.level);S.level++;toast("ارتقاء مستوى → "+S.level)}
+   while(S.xp>=need(S.level)){S.xp-=need(S.level);S.level++;}
+   if(x)recordXp(x,source||"system",meta||{});
+   if(S.level>before){
+     toast("ارتقاء مستوى → "+S.level);
+     recordEvent("level_up","ارتقاء مستوى · Lv."+S.level,{from:before,to:S.level},0);
+   }
  }
  function render(){
    $("#level").textContent=String(S.level).padStart(2,"0");
@@ -524,24 +778,29 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
    S.money.reserved=rv===""?null:Math.max(0,Number(rv));
    const av=moneyAvailable();
    S.finance=av===null?0:(av<0?20:75);
-   save();render();toast("تم تحديث وضعك المالي.");
+   save();render();
+   recordEvent("money_update","تحديث الوضع المالي",{balance:S.money.balance,reserved:S.money.reserved,available:av},0);
+   toast("تم تحديث وضعك المالي.");
  }
  function addExpense(){
    const a=$("#expenseAmount"),n=$("#expenseNote");if(!a)return;
    const amount=Number(a.value);if(!Number.isFinite(amount)||amount<=0){toast("أدخل مبلغ مصروف صحيح.");return;}
    const note=(n&&n.value.trim())||"مصروف";
    if(S.money.balance===null){toast("سجّل رصيدك الحالي أولًا.");return;}
+   const expenseTs=Date.now();
    S.money.balance=Math.max(0,Number(S.money.balance)-amount);
-   S.money.expenses.push({amount:amount,note:note,ts:Date.now()});
+   S.money.expenses.push({amount:amount,note:note,ts:expenseTs});
    if(S.money.expenses.length>50)S.money.expenses=S.money.expenses.slice(-50);
    const av=moneyAvailable();S.finance=av===null?0:(av<0?20:75);
    a.value="";if(n)n.value="";
-   save();render();toast("تم تسجيل "+note+" · -"+fmtMoney(amount));
+   save();render();recordTransaction("expense",amount,note,expenseTs);toast("تم تسجيل "+note+" · -"+fmtMoney(amount));
  }
  function saveSleepTarget(){
    const s=$("#targetSleep"),w=$("#targetWake");if(!s||!w)return;
    S.sleepData.targetSleep=s.value||null;S.sleepData.targetWake=w.value||null;
-   save();render();toast((S.sleepData.targetSleep&&S.sleepData.targetWake)?"تم اعتماد هدف النوم الجديد داخل النظام.":"تم حفظ هدف النوم الحالي.");
+   save();render();
+   recordEvent("sleep_target","تحديث هدف النوم",{targetSleep:S.sleepData.targetSleep,targetWake:S.sleepData.targetWake},0);
+   toast((S.sleepData.targetSleep&&S.sleepData.targetWake)?"تم اعتماد هدف النوم الجديد داخل النظام.":"تم حفظ هدف النوم الحالي.");
  }
  function logSleep(){
    const s=$("#actualSleep"),w=$("#actualWake");if(!s||!w||!s.value||!w.value){toast("سجّل وقت النوم والاستيقاظ.");return;}
@@ -551,8 +810,14 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
    S.sleep=Math.max(0,Math.min(100,Math.round(100-Math.abs(8-h)*15)));
    s.value="";w.value="";
    save();render();
-   if(h>=7&&h<=9){addXp(35);S.xp=Math.max(0,S.xp);save();render();toast("تم تسجيل "+h+" ساعات · +35 XP للنوم القريب من الهدف.");}
-   else toast("تم تسجيل "+h+" ساعات. لا يوجد خصم XP؛ ستؤثر فقط على طاقة اليوم.");
+   if(h>=7&&h<=9){
+     addXp(35,"sleep",{duration:h,start:S.sleepData.lastSleep,wake:S.sleepData.lastWake});
+     S.xp=Math.max(0,S.xp);save();render();recordSleep(S.sleepData.lastSleep,S.sleepData.lastWake,h,35);
+     toast("تم تسجيل "+h+" ساعات · +35 XP للنوم القريب من الهدف.");
+   }else{
+     recordSleep(S.sleepData.lastSleep,S.sleepData.lastWake,h,0);
+     toast("تم تسجيل "+h+" ساعات. لا يوجد خصم XP؛ ستؤثر فقط على طاقة اليوم.");
+   }
  }
  function setPrayerState(id,state){
    if(S.prayers[id])return;
@@ -562,9 +827,9 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
    else if(state==="late"){delta=25;msg="+25 XP · أديتها متأخرة";}
    else if(state==="excused"){delta=0;msg="تم تسجيل العذر · بدون مكافأة أو خصم";}
    else if(state==="missed"){delta=-150;msg="-150 XP · فاتت بتقصير";}
-   if(delta!==0)addXp(delta);
+   if(delta!==0)addXp(delta,"prayer",{prayer:id,state:state});
    S.xp=Math.max(0,S.xp);
-   save();render();toast(msg);
+   save();render();recordPrayer(id,state,delta);toast(msg);
  }
  const prayerRoot=document.querySelector('[data-prayer-root="1"]');
  if(prayerRoot){
@@ -589,7 +854,22 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
      if(e.target.closest("#logSleepBtn")){e.preventDefault();logSleep();}
    });
  }
+ const history=$("#history");
+ if(history){
+   history.addEventListener("click",e=>{
+     const range=e.target.closest("[data-days]");
+     if(range){
+       historyRangeDays=Number(range.dataset.days)||7;
+       $("#historyTabs .btn").forEach(b=>b.classList.toggle("active",b===range));
+       renderHistory();
+     }
+     if(e.target.closest("#exportBackupBtn")){e.preventDefault();exportBackup();}
+   });
+   const importInput=$("#importBackupInput");
+   if(importInput)importInput.addEventListener("change",e=>{const file=e.target.files&&e.target.files[0];if(file)importBackupFile(file);});
+ }
  render();
+ initLifeDatabase();
  if(didDailyReset)toast("يوم جديد · تم تصفير حالات اليوم مع حفظ تقدمك وسجل اليوم السابق.");
  if("serviceWorker" in navigator){
    navigator.serviceWorker.getRegistrations().then(regs=>regs.forEach(r=>r.unregister())).catch(()=>{});
