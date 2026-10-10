@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="نظام صالح">
 <link rel="manifest" href="manifest.webmanifest">
-<title>نظام صالح — اللاعب الواقعي v1.3.0</title>
+<title>نظام صالح — اللاعب الواقعي v1.3.1</title>
 <style>
 :root{
  --bg:#03060d;--panel:#09111f;--cyan:#63edff;--violet:#987dff;--gold:#ffd36a;
@@ -217,7 +217,7 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
    <div class="sleepbox"><div class="small muted">مدة آخر نوم</div><div class="moneyvalue" id="sleepDurationView">—</div></div>
    <div class="sleepbox"><div class="small muted">طاقة النوم</div><div class="moneyvalue" id="sleepScoreView">—</div></div>
   </div>
-  <div class="moneybox"><div class="small muted">الهدف الحالي</div><div class="rtitle" id="sleepTargetView">غير مثبت</div><div class="rsub" id="sleepLastView">لم تسجل نومًا فعليًا بعد.</div></div>
+  <div class="moneybox"><div class="small muted">الهدف الحالي</div><div class="rtitle" id="sleepTargetView">غير مثبت</div><div class="rsub" id="sleepLastView">لم تسجل نومًا فعليًا بعد.</div><div class="rsub" id="sleepTargetWarning"></div></div>
  </div>
 
  <div class="priority">
@@ -274,8 +274,8 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
   <div class="metricGrid">
    <div class="metric"><span>الصلاة في الوقت</span><strong id="histPrayer">—</strong></div>
    <div class="metric"><span>متوسط النوم</span><strong id="histSleep">—</strong></div>
-   <div class="metric"><span>إجمالي المصروف</span><strong id="histSpend">—</strong></div>
-   <div class="metric"><span>صافي XP</span><strong id="histXp">—</strong></div>
+   <div class="metric"><span>المصروف المسجل</span><strong id="histSpend">—</strong></div>
+   <div class="metric"><span>XP الموثّق</span><strong id="histXp">—</strong></div>
   </div>
   <div class="dbStatus" id="dbStatus">جاري تجهيز قاعدة البيانات المحلية…</div>
  </div>
@@ -283,7 +283,7 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
  <div class="chartBox">
   <h3>اتجاه النوم</h3>
   <svg id="sleepChart" viewBox="0 0 320 150" role="img" aria-label="رسم اتجاه ساعات النوم"></svg>
-  <div class="legendRow"><span>الخط المرجعي: 8 ساعات</span><span id="sleepTrendText"></span></div>
+  <div class="legendRow"><span>الخط المرجعي: 8 ساعات · الفجوات بلا بيانات</span><span id="sleepTrendText"></span></div>
  </div>
 
  <div class="chartBox">
@@ -294,7 +294,7 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
 
  <div class="card">
   <div class="section"><h2 style="font-size:15px">الصلاة</h2><span>حسب الحالات المسجلة</span></div>
-  <div class="prayerSummary" id="prayerSummary"><div class="rsub">لا توجد بيانات كافية بعد.</div></div>
+  <div class="prayerSummary" id="prayerSummary"><div class="rsub">لا توجد بيانات كافية بعد.</div></div><div class="rsub" id="prayerCoverage" style="margin-top:10px">الأيام غير المسجلة لا تُحسب كتقصير.</div>
  </div>
 
  <div class="card">
@@ -659,22 +659,54 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
    const today=riyadhDateKey();
    if(!S.lastActiveDate){
      S.lastActiveDate=today;
-     save();
-     return false;
+     save();return null;
    }
-   if(S.lastActiveDate===today)return false;
-   const previous=S.lastActiveDate;
-   const already=S.dailyHistory.some(d=>d&&d.date===previous);
-   if(!already)S.dailyHistory.push(snapshotCurrentDay(previous));
-   if(S.dailyHistory.length>90)S.dailyHistory=S.dailyHistory.slice(-90);
+   // Clock changes backwards must not overwrite an earlier day.
+   if(S.lastActiveDate>=today)return null;
+   const previousDate=S.lastActiveDate;
+   const snapshot=snapshotCurrentDay(previousDate);
+   if(!S.dailyHistory.some(d=>d&&d.date===previousDate))S.dailyHistory.push(snapshot);
+   if(S.dailyHistory.length>365)S.dailyHistory=S.dailyHistory.slice(-365);
    S.prayers={fajr:null,dhuhr:null,asr:null,maghrib:null,isha:null};
    S.daily={tasks:[],states:{}};
    S.lastActiveDate=today;
    save();
+   return {previousDate:previousDate,today:today,snapshot:snapshot};
+ }
+ function save(){localStorage.setItem(STORE,JSON.stringify(S));}
+ const initialDayReset=rolloverDayIfNeeded();
+ const pendingDayTransitions=initialDayReset?[initialDayReset]:[];
+ let lifeDBReady=false;
+ let dayTransitionsFlushing=false;
+ function checkDayBoundary(){
+   const reset=rolloverDayIfNeeded();
+   if(!reset)return false;
+   pendingDayTransitions.push(reset);
+   render();
+   flushDayTransitions();
+   toast("يوم جديد · تم حفظ اليوم السابق وفتح تسجيلات جديدة.");
    return true;
  }
- function save(){localStorage.setItem(STORE,JSON.stringify(S))}
- const didDailyReset=rolloverDayIfNeeded();
+ async function flushDayTransitions(){
+   if(!lifeDBReady||dayTransitionsFlushing)return;
+   dayTransitionsFlushing=true;
+   try{
+     while(pendingDayTransitions.length){
+       const d=pendingDayTransitions[0];
+       await dbPut("days",Object.assign({},d.snapshot,{status:"closed"}));
+       await dbPut("events",{
+         id:"day-reset-"+d.today,date:d.today,ts:eventTimeISO(),
+         type:"day_reset",label:"بداية يوم جديد",
+         payload:{previousDate:d.previousDate},xpDelta:0
+       });
+       pendingDayTransitions.shift();
+     }
+     await persistCurrentDaySnapshot();
+     await renderHistory();
+   }catch(e){
+     if($("#dbStatus"))$("#dbStatus").textContent="تعذر إكمال أرشفة يوم؛ سيتم المحاولة عند العودة للصفحة.";
+   }finally{dayTransitionsFlushing=false;}
+ }
  function toast(t){const e=$("#toast");e.innerHTML="<strong>[ النظام ]</strong><br>"+t;e.classList.add("show");setTimeout(()=>e.classList.remove("show"),1800)}
  function addXp(x,source,meta){
    const before=S.level;
@@ -699,13 +731,13 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
    const stats=[
     ["ثبات العبادة",(()=>{const a=prayerVals.filter(v=>v&&v!=="excused");if(!a.length)return 0;const total=a.reduce((n,v)=>{if(v==="ontime")return n+1;if(v==="late")return n+0.25;return n;},0);return Math.round(total/a.length*100)})()],
     ["ثبات النوم",S.sleep||0],
-    ["التحكم المالي",S.finance||0],
+    ["التحكم المالي",moneyAvailable()===null?null:(S.finance||0)],
     ["الانضباط",S.discipline],
     ["التركيز",S.focus]
    ];
    renderMoney();
    renderSleep();
-   $("#stats").innerHTML=stats.map(x=>`<div class="stat"><div class="statline"><span>${x[0]}</span><span>${x[1]}%</span></div><div class="bar"><i style="width:${x[1]}%"></i></div></div>`).join("");
+   $("#stats").innerHTML=stats.map(x=>`<div class="stat"><div class="statline"><span>${x[0]}</span><span>${x[1]===null?"بيانات غير متوفرة":x[1]+"%"}</span></div><div class="bar"><i style="width:${x[1]===null?0:x[1]}%"></i></div></div>`).join("");
    prayerKeys.forEach(k=>{
      const v=S.prayers[k], status=$("#status-"+k), actions=$("#actions-"+k);
      const labels={ontime:"في الوقت · +100 XP",late:"أديتها متأخرة · +25 XP",excused:"عذر · بدون XP",missed:"فاتت بتقصير · -150 XP"};
@@ -768,6 +800,8 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
    if($("#sleepLastView")){
      $("#sleepLastView").textContent=(S.sleepData.lastSleep&&S.sleepData.lastWake)?"آخر نوم: "+fmtTime(S.sleepData.lastSleep)+" → "+fmtTime(S.sleepData.lastWake):"لم تسجل نومًا فعليًا بعد.";
    }
+   const targetHours=durationHours(S.sleepData.targetSleep,S.sleepData.targetWake);
+   if($("#sleepTargetWarning"))$("#sleepTargetWarning").textContent=(targetHours!==null&&targetHours>12)?"تنبيه: هدف النوم المسجل يعادل "+targetHours+" ساعة. تحقق من AM/PM (مثلاً 13:00 للواحدة ظهرًا).":"";
  }
  function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));}
  function saveMoneyState(){
@@ -870,7 +904,13 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
  }
  render();
  initLifeDatabase();
- if(didDailyReset)toast("يوم جديد · تم تصفير حالات اليوم مع حفظ تقدمك وسجل اليوم السابق.");
+ if(initialDayReset)toast("يوم جديد · تم تصفير حالات اليوم وحفظ ملخص أمس.");
+ // iOS can suspend timers in background; focus/pageshow restore correct day immediately.
+ document.addEventListener("visibilitychange",()=>{if(!document.hidden)checkDayBoundary();});
+ window.addEventListener("pageshow",()=>checkDayBoundary());
+ window.addEventListener("focus",()=>checkDayBoundary());
+ setInterval(()=>checkDayBoundary(),60000);
+ document.addEventListener("click",()=>checkDayBoundary(),true);
  if("serviceWorker" in navigator){
    navigator.serviceWorker.getRegistrations().then(regs=>regs.forEach(r=>r.unregister())).catch(()=>{});
  }
