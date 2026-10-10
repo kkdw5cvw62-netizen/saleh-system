@@ -703,21 +703,55 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
      setTimeout(()=>URL.revokeObjectURL(url),1000);toast("تم تجهيز النسخة الاحتياطية.");
    }catch(e){toast("تعذر تصدير النسخة الاحتياطية.");}
  }
+ function validateBackupFile(backup){
+   if(!backup||backup.schema!=="saleh-life-backup-v1"||!backup.state||!backup.database)
+     throw new Error("صيغة النسخة غير معروفة");
+   const s=backup.state;
+   if(!Number.isInteger(s.level)||s.level<1||!Number.isFinite(Number(s.xp))||!s.prayers||!s.money||!s.sleepData)
+     throw new Error("حالة اللاعب غير مكتملة");
+   const keys={events:"id",days:"date",prayers:"id",sleep_sessions:"id",transactions:"id",xp_events:"id",meta:"key"};
+   for(const name of DB_STORES){
+     const records=backup.database[name];
+     if(!Array.isArray(records)||records.length>100000)throw new Error("جدول غير صالح: "+name);
+     const seen=new Set();
+     for(const row of records){
+       if(!row||typeof row!=="object"||typeof row[keys[name]]!=="string"||!row[keys[name]]||seen.has(row[keys[name]]))
+         throw new Error("سجل ناقص أو مكرر في: "+name);
+       seen.add(row[keys[name]]);
+     }
+   }
+   return true;
+ }
+ async function replaceDatabaseAtomically(database){
+   const db=await openLifeDB();
+   // One transaction: failed imports roll back all stores instead of deleting them one by one.
+   await new Promise((resolve,reject)=>{
+     const tx=db.transaction(DB_STORES,"readwrite");
+     tx.oncomplete=()=>resolve();
+     tx.onerror=()=>reject(tx.error||new Error("فشل الاستعادة"));
+     tx.onabort=()=>reject(tx.error||new Error("تم إلغاء الاستعادة"));
+     for(const name of DB_STORES){
+       const store=tx.objectStore(name);
+       store.clear();
+       for(const row of database[name])store.put(row);
+     }
+   });
+ }
  async function importBackupFile(file){
    try{
-     const raw=await file.text(),backup=JSON.parse(raw);
-     if(!backup||backup.schema!=="saleh-life-backup-v1"||!backup.state)throw new Error("invalid");
-     if(!confirm("سيتم استبدال بيانات النظام الحالية بهذه النسخة. هل تريد المتابعة؟"))return;
-     for(const name of DB_STORES)await dbClear(name);
-     const database=backup.database||{};
-     for(const name of DB_STORES){
-       for(const row of (database[name]||[]))await dbPut(name,row);
-     }
+     if(!file||file.size>25*1024*1024)throw new Error("ملف كبير جدًا");
+     const raw=await file.text();
+     const backup=JSON.parse(raw);
+     validateBackupFile(backup);
+     if(!confirm("سيتم استبدال بياناتك الحالية بهذه النسخة. تأكد أن لديك نسخة أخرى محفوظة. هل تريد الاستمرار؟"))return;
+     await replaceDatabaseAtomically(backup.database);
      S=backup.state;
      localStorage.setItem(STORE,JSON.stringify(S));
-     toast("تمت الاستعادة. سيتم تحديث الصفحة.");
+     toast("تمت الاستعادة بنجاح. سيتم تحديث الصفحة.");
      setTimeout(()=>location.reload(),500);
-   }catch(e){toast("ملف النسخة الاحتياطية غير صالح.");}
+   }catch(e){
+     toast("لم تتغير البيانات: "+(e&&e.message?e.message:"ملف النسخة غير صالح"));
+   }
  }
  async function initLifeDatabase(){
    try{
