@@ -491,25 +491,92 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
    }catch(e){}
  }
  async function migrateLegacyToDB(){
-   const done=await dbGet("meta","legacyMigrationV1").catch(()=>null);
-   if(done)return;
+   // Idempotent repair of incomplete imports from the first release.
+   if(await dbGet("meta","auditRepairV131"))return;
+   const today=riyadhDateKey();
+   const allDays=await dbGetAll("days");
+   const byDate=new Map();
+   for(const d of allDays){if(d&&d.date)byDate.set(d.date,d);}
    for(const d of (S.dailyHistory||[])){
-     if(!d||!d.date)continue;
-     await dbPut("days",Object.assign({status:"closed"},d)).catch(()=>{});
-     if(d.prayers){
-       for(const k of prayerKeys){
-         const st=d.prayers[k];
-         if(!st)continue;
-         await dbPut("prayers",{id:"legacy-prayer-"+d.date+"-"+k,date:d.date,ts:d.savedAt||d.date+"T12:00:00Z",prayer:k,state:st,xpDelta:0,legacy:true}).catch(()=>{});
-       }
+     if(d&&d.date&&!byDate.has(d.date))byDate.set(d.date,Object.assign({},d));
+   }
+   // Live state is authoritative for today's snapshot; do not use a stale database copy.
+   byDate.set(today,snapshotCurrentDay(today));
+   const ordered=[...byDate.values()].sort((a,b)=>a.date.localeCompare(b.date));
+   const existingPrayers=await dbGetAll("prayers");
+   const existingSleeps=await dbGetAll("sleep_sessions");
+   const existingTxs=await dbGetAll("transactions");
+   const prayerMap=new Set(existingPrayers.map(p=>p.date+"|"+p.prayer));
+   const sleepDateSet=new Set(existingSleeps.map(s=>s.date));
+   const txFingerprints=new Set(existingTxs.map(t=>[t.ts,Number(t.amount),t.note||""].join("|")));
+   const prayerNames={fajr:"الفجر",dhuhr:"الظهر",asr:"العصر",maghrib:"المغرب",isha:"العشاء"};
+   const stateNames={ontime:"في الوقت",late:"متأخرة",excused:"عذر",missed:"فاتت بتقصير"};
+   let backfilledPrayers=0,backfilledSleep=0,skippedCarryover=0;
+   let preceding=null;
+   for(const day of ordered){
+     await dbPut("days",Object.assign({},day,{status:day.date<today?"closed":"open"}));
+     for(const key of prayerKeys){
+       const state=day.prayers&&day.prayers[key];
+       if(!stateNames[state]||prayerMap.has(day.date+"|"+key))continue;
+       const id="recovered-prayer-"+day.date+"-"+key;
+       await dbPut("prayers",{
+         id:id,date:day.date,ts:null,prayer:key,state:state,xpDelta:null,
+         legacy:true,precision:"date-only"
+       });
+       await dbPut("events",{
+         id:"recovered-event-prayer-"+day.date+"-"+key,
+         date:day.date,ts:null,type:"prayer",
+         label:prayerNames[key]+" · "+stateNames[state]+" (سجل سابق)",
+         payload:{prayer:key,state:state,precision:"date-only"},
+         xpDelta:null,legacy:true
+       });
+       prayerMap.add(day.date+"|"+key);backfilledPrayers++;
      }
+     const sl=day.sleep||{};
+     const duration=Number(sl.lastDuration);
+     const hasSleep=Number.isFinite(duration)&&duration>0&&duration<=16&&
+       typeof sl.lastSleep==="string"&&typeof sl.lastWake==="string";
+     const previousSleep=preceding&&preceding.sleep;
+     const duplicatedCarryover=hasSleep&&previousSleep&&
+       sl.lastSleep===previousSleep.lastSleep&&sl.lastWake===previousSleep.lastWake&&
+       Number(sl.lastDuration)===Number(previousSleep.lastDuration);
+     // Snapshot sleep time may be carried forward. Never count it as a new session.
+     if(hasSleep&&!sleepDateSet.has(day.date)&&!duplicatedCarryover){
+       await dbPut("sleep_sessions",{
+         id:"recovered-sleep-"+day.date,date:day.date,ts:null,
+         start:sl.lastSleep,wake:sl.lastWake,duration:duration,
+         xpDelta:null,legacy:true,precision:"date-only"
+       });
+       await dbPut("events",{
+         id:"recovered-event-sleep-"+day.date,date:day.date,ts:null,
+         type:"sleep",label:"نوم · "+duration+" ساعة (سجل سابق)",
+         payload:{duration:duration,start:sl.lastSleep,wake:sl.lastWake,precision:"date-only"},
+         xpDelta:null,legacy:true
+       });
+       sleepDateSet.add(day.date);backfilledSleep++;
+     }else if(hasSleep&&!sleepDateSet.has(day.date)&&duplicatedCarryover){
+       skippedCarryover++;
+     }
+     preceding=day;
    }
    for(let i=0;i<(S.money.expenses||[]).length;i++){
-     const e=S.money.expenses[i];if(!e||!e.ts)continue;
-     const d=riyadhDateKey(new Date(e.ts));
-     await dbPut("transactions",{id:"legacy-expense-"+e.ts+"-"+i,date:d,ts:new Date(e.ts).toISOString(),kind:"expense",amount:Number(e.amount)||0,note:e.note||"مصروف",legacy:true}).catch(()=>{});
+     const e=S.money.expenses[i];
+     if(!e||!Number.isFinite(Number(e.ts)))continue;
+     const ts=new Date(Number(e.ts)).toISOString(),note=e.note||"مصروف";
+     const fp=[ts,Number(e.amount)||0,note].join("|");
+     if(txFingerprints.has(fp))continue;
+     await dbPut("transactions",{
+       id:"recovered-expense-"+e.ts+"-"+i,date:riyadhDateKey(new Date(Number(e.ts))),ts:ts,
+       kind:"expense",amount:Number(e.amount)||0,note:note,legacy:true
+     });
+     txFingerprints.add(fp);
    }
-   await dbPut("meta",{key:"legacyMigrationV1",value:true,at:eventTimeISO()}).catch(()=>{});
+   // Detailed XP cannot be reconstructed reliably; snapshots remain as historical totals.
+   await dbPut("meta",{
+     key:"auditRepairV131",value:true,at:eventTimeISO(),
+     backfilledPrayers:backfilledPrayers,backfilledSleep:backfilledSleep,
+     skippedCarryover:skippedCarryover,xpHistoryPartial:true
+   });
  }
  function riyadhDateKeyFromDate(date){
    const parts=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Riyadh",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(date);
@@ -521,6 +588,7 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
    const out=[];for(let i=days-1;i>=0;i--)out.push(dateKeyDaysAgo(i));return out;
  }
  function formatEventClock(iso){
+   if(!iso)return "الوقت غير معروف";
    try{return new Intl.DateTimeFormat("ar-SA",{timeZone:"Asia/Riyadh",hour:"numeric",minute:"2-digit"}).format(new Date(iso));}catch(e){return "";}
  }
  function formatShortDate(key){const p=String(key).split("-");return p.length===3?p[2]+"/"+p[1]:key;}
@@ -622,12 +690,14 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
  async function initLifeDatabase(){
    try{
      await openLifeDB();
-     await migrateLegacyToDB();
+     // Snapshot today's live state before completing historical backfill.
      await persistCurrentDaySnapshot();
-     if(didDailyReset)recordEvent("day_reset","بداية يوم جديد",{previousDate:S.dailyHistory.length?S.dailyHistory[S.dailyHistory.length-1].date:null},0);
+     await migrateLegacyToDB();
+     lifeDBReady=true;
+     await flushDayTransitions();
      await renderHistory();
    }catch(e){
-     if($("#dbStatus"))$("#dbStatus").textContent="قاعدة البيانات غير متاحة؛ بيانات التشغيل الحالية ما زالت محفوظة محليًا.";
+     if($("#dbStatus"))$("#dbStatus").textContent="تعذر قراءة قاعدة البيانات؛ بياناتك الأساسية لا تزال محفوظة محليًا.";
    }
  }
  const need=l=>1000+(l-1)*350;
