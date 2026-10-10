@@ -275,7 +275,7 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
    <div class="metric"><span>الصلاة في الوقت</span><strong id="histPrayer">—</strong></div>
    <div class="metric"><span>متوسط النوم</span><strong id="histSleep">—</strong></div>
    <div class="metric"><span>المصروف المسجل</span><strong id="histSpend">—</strong></div>
-   <div class="metric"><span>XP الموثّق</span><strong id="histXp">—</strong></div>
+   <div class="metric"><span>XP المسجل تفصيليًا</span><strong id="histXp">—</strong></div>
   </div>
   <div class="dbStatus" id="dbStatus">جاري تجهيز قاعدة البيانات المحلية…</div>
  </div>
@@ -598,30 +598,46 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
  }
  function drawSleepChart(rows,days){
    const svg=$("#sleepChart");if(!svg)return;
-   const by={};rows.forEach(r=>{if(r.duration>0){if(!by[r.date])by[r.date]=[];by[r.date].push(Number(r.duration));}});
+   const by={};
+   rows.forEach(r=>{
+     if(Number(r.duration)>0){
+       if(!by[r.date])by[r.date]=[];
+       by[r.date].push(Number(r.duration));
+     }
+   });
    const keys=historyDateKeys(days);
-   const pts=keys.map((k,i)=>({k:k,v:by[k]?by[k].reduce((a,b)=>a+b,0)/by[k].length:null,i:i})).filter(x=>x.v!==null);
-   if(!pts.length){drawEmptyChart(svg,"سجّل نومك لتظهر البيانات هنا");return;}
-   const max=Math.max(10,...pts.map(x=>x.v));
+   const values=keys.map((date,i)=>({date:date,i:i,value:by[date]?by[date].reduce((a,b)=>a+b,0)/by[date].length:null}));
+   const pts=values.filter(p=>p.value!==null);
+   if(!pts.length){drawEmptyChart(svg,"لا توجد جلسات نوم مسجلة لهذه الفترة");return;}
+   const max=Math.max(10,...pts.map(p=>p.value));
    const x=i=>days===1?160:12+(i/(days-1))*296;
-   const y=v=>132-(Math.min(max,v)/max)*112;
-   const points=pts.map(p=>x(p.i).toFixed(1)+","+y(p.v).toFixed(1)).join(" ");
-   const targetY=y(8);
-   svg.innerHTML='<line x1="10" y1="'+targetY+'" x2="310" y2="'+targetY+'" stroke="#ffd36a" stroke-width="1" stroke-dasharray="4 4" opacity=".55"/>'+
-    '<polyline points="'+points+'" fill="none" stroke="#63edff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>'+
-    pts.map(p=>'<circle cx="'+x(p.i)+'" cy="'+y(p.v)+'" r="3" fill="#63edff"><title>'+formatShortDate(p.k)+' · '+p.v.toFixed(1)+' س</title></circle>').join("")+
+   const y=value=>132-(Math.min(max,value)/max)*112;
+   const segments=[];let current=[];
+   // End the line at missing dates instead of implying an uninterrupted trend.
+   values.forEach(p=>{
+     if(p.value===null){if(current.length){segments.push(current);current=[];}}
+     else current.push(p);
+   });
+   if(current.length)segments.push(current);
+   svg.innerHTML='<line x1="10" y1="'+y(8)+'" x2="310" y2="'+y(8)+'" stroke="#ffd36a" stroke-width="1" stroke-dasharray="4 4" opacity=".6"/>'+
+    segments.filter(s=>s.length>1).map(s=>'<polyline points="'+s.map(p=>x(p.i).toFixed(1)+","+y(p.value).toFixed(1)).join(" ")+'" fill="none" stroke="#63edff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>').join("")+
+    pts.map(p=>'<circle cx="'+x(p.i)+'" cy="'+y(p.value)+'" r="3.5" fill="#63edff"><title>'+formatShortDate(p.date)+' · '+p.value.toFixed(1)+' س</title></circle>').join("")+
     '<text x="8" y="15" fill="#8ea4b8" font-size="8">'+max.toFixed(0)+'س</text><text x="8" y="137" fill="#8ea4b8" font-size="8">0</text>';
  }
  function drawSpendChart(rows,days){
    const svg=$("#spendChart");if(!svg)return;
-   const by={};rows.filter(r=>r.kind==="expense").forEach(r=>{by[r.date]=(by[r.date]||0)+Number(r.amount||0);});
-   const keys=historyDateKeys(days),vals=keys.map(k=>({k:k,v:by[k]||0}));
-   const max=Math.max(...vals.map(x=>x.v),0);
-   if(max<=0){drawEmptyChart(svg,"سجّل مصروفاتك لتظهر البيانات هنا");return;}
+   const by={};
+   rows.filter(r=>r.kind==="expense").forEach(r=>{by[r.date]=(by[r.date]||0)+Number(r.amount||0);});
+   const keys=historyDateKeys(days);
+   const values=keys.map(date=>Object.prototype.hasOwnProperty.call(by,date)?by[date]:null);
+   const known=values.filter(v=>v!==null);
+   if(!known.length){drawEmptyChart(svg,"لا توجد مصروفات مُدخلة لهذه الفترة");return;}
+   const max=Math.max(...known,1);
    const gap=2,w=Math.max(1,(296/days)-gap);
-   svg.innerHTML=vals.map((p,i)=>{
-     const h=(p.v/max)*112,x=12+(i/days)*296,y=132-h;
-     return '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h.toFixed(1)+'" rx="1.5" fill="#987dff" opacity=".85"><title>'+formatShortDate(p.k)+' · '+p.v.toLocaleString("ar-SA")+' ر.س</title></rect>';
+   svg.innerHTML=values.map((value,i)=>{
+     if(value===null)return "";
+     const h=(value/max)*112,x=12+(i/days)*296,y=132-h;
+     return '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h.toFixed(1)+'" rx="1.5" fill="#987dff" opacity=".85"><title>'+formatShortDate(keys[i])+' · '+value.toLocaleString("ar-SA")+' ر.س</title></rect>';
    }).join("")+'<text x="8" y="15" fill="#8ea4b8" font-size="8">'+max.toLocaleString("ar-SA")+'</text><text x="8" y="137" fill="#8ea4b8" font-size="8">0</text>';
  }
  async function renderHistory(){
@@ -631,27 +647,43 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
        dbGetAll("prayers"),dbGetAll("sleep_sessions"),dbGetAll("transactions"),dbGetAll("xp_events"),dbGetAll("events")
      ]);
      const cutoff=dateKeyDaysAgo(historyRangeDays-1);
-     const pf=prayers.filter(r=>r.date>=cutoff),sf=sleeps.filter(r=>r.date>=cutoff),tf=txs.filter(r=>r.date>=cutoff),xf=xps.filter(r=>r.date>=cutoff),ef=events.filter(r=>r.date>=cutoff);
+     // One actual state per date/prayer. Prefer a new real entry over a migrated record.
+     const prayerMap=new Map();
+     prayers.filter(r=>r.date>=cutoff).forEach(r=>{
+       const key=r.date+"|"+r.prayer,prior=prayerMap.get(key);
+       if(!prior||(!r.legacy&&prior.legacy))prayerMap.set(key,r);
+     });
+     const pf=[...prayerMap.values()];
+     const sf=sleeps.filter(r=>r.date>=cutoff);
+     const tf=txs.filter(r=>r.date>=cutoff);
+     const xf=xps.filter(r=>r.date>=cutoff);
+     const ef=events.filter(r=>r.date>=cutoff);
      const eligible=pf.filter(r=>r.state!=="excused"),ontime=eligible.filter(r=>r.state==="ontime").length;
      const prayerPct=eligible.length?Math.round(ontime/eligible.length*100):null;
      const sleepAvg=sf.length?sf.reduce((n,r)=>n+Number(r.duration||0),0)/sf.length:null;
-     const spend=tf.filter(r=>r.kind==="expense").reduce((n,r)=>n+Number(r.amount||0),0);
+     const spentTx=tf.filter(r=>r.kind==="expense");
+     const spend=spentTx.reduce((n,r)=>n+Number(r.amount||0),0);
      const xp=xf.reduce((n,r)=>n+Number(r.delta||0),0);
      $("#histPrayer").textContent=prayerPct===null?"—":prayerPct+"%";
      $("#histSleep").textContent=sleepAvg===null?"—":sleepAvg.toFixed(1)+"س";
-     $("#histSpend").textContent=fmtMoney(spend);
-     $("#histXp").textContent=(xp>0?"+":"")+xp;
+     $("#histSpend").textContent=spentTx.length?fmtMoney(spend):"—";
+     $("#histXp").textContent=xf.length?(xp>0?"+":"")+xp:"—";
      $("#historyRangeLabel").textContent="آخر "+historyRangeDays+" أيام";
-     $("#dbStatus").textContent="قاعدة البيانات تعمل · "+(prayers.length+sleeps.length+txs.length+xps.length+events.length)+" سجل";
+     const coverage=pf.length+"/"+(historyRangeDays*5);
+     const old=prayers.filter(p=>p.legacy).length+sleeps.filter(s=>s.legacy).length;
+     $("#dbStatus").textContent="قاعدة البيانات تعمل · "+(prayers.length+sleeps.length+txs.length+xps.length+events.length)+" سجل · مستعاد من السابق: "+old;
+     $("#prayerCoverage").textContent="التغطية: "+coverage+" تسجيل صلاة. الفراغ يعني غير مسجل، وليس تقصيرًا. الأعذار لا تدخل في نسبة الالتزام.";
      drawSleepChart(sf,historyRangeDays);
      drawSpendChart(tf,historyRangeDays);
-     $("#sleepTrendText").textContent=sleepAvg===null?"":"المتوسط "+sleepAvg.toFixed(1)+" ساعة";
-     $("#spendTrendText").textContent=spend?"إجمالي الفترة "+fmtMoney(spend):"";
-     const counts={ontime:0,late:0,excused:0,missed:0};pf.forEach(r=>{if(counts[r.state]!==undefined)counts[r.state]++;});
+     const daysWithSleep=new Set(sf.map(r=>r.date)).size;
+     $("#sleepTrendText").textContent=sleepAvg===null?"":"متوسط "+sleepAvg.toFixed(1)+"س · "+daysWithSleep+" يوم ببيانات";
+     $("#spendTrendText").textContent=spentTx.length?"إجمالي المصروف المُدخل "+fmtMoney(spend)+" · بقية الأيام قد تكون غير مسجلة":"لا توجد بيانات مالية؛ لا نفترض أن الصرف صفر.";
+     const counts={ontime:0,late:0,excused:0,missed:0};
+     pf.forEach(r=>{if(counts[r.state]!==undefined)counts[r.state]++;});
      const maxCount=Math.max(1,...Object.values(counts));
      const names={ontime:"في الوقت",late:"متأخرة",excused:"عذر",missed:"تقصير"};
      $("#prayerSummary").innerHTML=Object.keys(counts).map(k=>'<div class="sumRow"><span>'+names[k]+'</span><div class="sumTrack"><i style="width:'+(counts[k]/maxCount*100)+'%"></i></div><strong>'+counts[k]+'</strong></div>').join("");
-     const latest=ef.sort((a,b)=>String(b.ts).localeCompare(String(a.ts))).slice(0,25);
+     const latest=ef.sort((a,b)=>String(b.ts||"").localeCompare(String(a.ts||""))).slice(0,25);
      $("#eventFeed").innerHTML=latest.length?latest.map(e=>{
        const xpText=e.xpDelta?(' · '+(e.xpDelta>0?'+':'')+e.xpDelta+' XP'):'';
        return '<div class="eventItem"><strong>'+escapeHtml(e.label||e.type)+'</strong><div class="meta">'+formatShortDate(e.date)+' · '+formatEventClock(e.ts)+xpText+'</div></div>';
