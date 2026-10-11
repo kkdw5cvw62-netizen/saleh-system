@@ -520,7 +520,7 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
  function eventTimeISO(){return new Date().toISOString();}
  function recordEvent(type,label,payload,xpDelta){
    const row={id:makeId("evt"),date:riyadhDateKey(),ts:eventTimeISO(),type:type,label:label,payload:payload||{},xpDelta:Number(xpDelta)||0};
-   dbPut("events",row).then(()=>{persistCurrentDaySnapshot();renderHistory();}).catch(()=>{});
+   dbPut("events",row).then(()=>{persistCurrentDaySnapshot();renderHistory();refreshTodayFromDB();}).catch(()=>{});
    return row;
  }
  function recordPrayer(prayer,state,xpDelta){
@@ -532,12 +532,12 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
  }
  function recordTransaction(kind,amount,note,tsMs){
    const ts=new Date(tsMs||Date.now()).toISOString(),date=riyadhDateKey(new Date(tsMs||Date.now()));
-   dbPut("transactions",{id:makeId("tx"),date:date,ts:ts,kind:kind,amount:Number(amount)||0,note:note||""}).catch(()=>{});
+   dbPut("transactions",{id:makeId("tx"),date:date,ts:ts,kind:kind,amount:Number(amount)||0,note:note||""}).then(()=>refreshTodayFromDB()).catch(()=>{});
    if(kind==="expense")recordEvent("expense","مصروف · "+(note||"بدون وصف"),{amount:Number(amount)||0,note:note||""},0);
  }
  function recordSleep(start,wake,duration,xpDelta){
    const ts=eventTimeISO(),date=riyadhDateKey();
-   dbPut("sleep_sessions",{id:makeId("sleep"),date:date,ts:ts,start:start,wake:wake,duration:Number(duration)||0,xpDelta:Number(xpDelta)||0}).catch(()=>{});
+   dbPut("sleep_sessions",{id:makeId("sleep"),date:date,ts:ts,start:start,wake:wake,duration:Number(duration)||0,xpDelta:Number(xpDelta)||0}).then(()=>refreshTodayFromDB()).catch(()=>{});
    recordEvent("sleep","نوم · "+duration+" ساعة",{start:start,wake:wake,duration:duration},xpDelta);
  }
  function recordXp(delta,source,meta){
@@ -823,6 +823,7 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
      lifeDBReady=true;
      await flushDayTransitions();
      await renderHistory();
+     await refreshTodayFromDB();
    }catch(e){
      if($("#dbStatus"))$("#dbStatus").textContent="تعذر قراءة قاعدة البيانات؛ بياناتك الأساسية لا تزال محفوظة محليًا.";
    }
@@ -879,8 +880,10 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
    const reset=rolloverDayIfNeeded();
    if(!reset)return false;
    pendingDayTransitions.push(reset);
+   loadedTodayDataFor=null;
    render();
    flushDayTransitions();
+   refreshTodayFromDB();
    toast("يوم جديد · تم حفظ اليوم السابق وفتح تسجيلات جديدة.");
    return true;
  }
@@ -952,8 +955,103 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
        }
      }
    });
-   if(logged<5){$("#nowTitle").textContent="سجّل حالة الصلاة الحالية";$("#nowWhy").textContent="اختر حالتها بدقة: في الوقت، متأخرة، عذر، أو فاتت بتقصير."}
-   else{$("#nowTitle").textContent="انتقل لأهم مهمة في يومك";$("#nowWhy").textContent="الصلاة مستقرة اليوم. اختر أهم التزام أو مهمة واحدة فقط."}
+   renderTodayCore();
+ }
+ let latestSleepRecord=null;
+ let todayExpenseTotal=null;
+ let todayExpenseCount=0;
+ let loadedTodayDataFor=null;
+ let todayRefreshSerial=0;
+ function renderTodayCore(){
+   if(!$("#today"))return;
+   const now=new Date();
+   const d=riyadhDateKey(now);
+   const fmtDate=new Intl.DateTimeFormat("ar-SA-u-ca-gregory",{timeZone:"Asia/Riyadh",weekday:"long",day:"numeric",month:"long"});
+   const fmtClock=new Intl.DateTimeFormat("ar-SA",{timeZone:"Asia/Riyadh",hour:"numeric",minute:"2-digit",hour12:true});
+   $("#todayDate").textContent=fmtDate.format(now)+" · الرياض";
+   $("#todayTime").textContent=fmtClock.format(now);
+
+   const prayers=Object.values(S.prayers||{});
+   const logged=prayers.filter(Boolean).length;
+   const ontime=prayers.filter(x=>x==="ontime").length;
+   $("#todayPrayerValue").textContent=logged+" / 5 مسجلة";
+   $("#todayPrayerHint").textContent=ontime+" في الوقت · عدم التسجيل لا يعني التقصير";
+
+   const sleepRow=latestSleepRecord;
+   const storedHours=Number(S.sleepData&&S.sleepData.lastDuration);
+   const validStored=Number.isFinite(storedHours)&&storedHours>0&&storedHours<=16;
+   if(sleepRow&&Number(sleepRow.duration)>0){
+     $("#todaySleepValue").textContent=Number(sleepRow.duration).toFixed(1)+" ساعة";
+     $("#todaySleepHint").textContent="آخر تسجيل "+formatShortDate(sleepRow.date);
+   }else{
+     $("#todaySleepValue").textContent=validStored?storedHours.toFixed(1)+" ساعة":"غير مسجل";
+     $("#todaySleepHint").textContent=validStored?"آخر مدة محفوظة · تاريخها غير مؤكد":"سجّل نومك الفعلي";
+   }
+
+   const available=moneyAvailable();
+   $("#todayAvailableValue").textContent=available===null?"غير مسجل":fmtMoney(available);
+   $("#todayAvailableValue").className=available!==null&&available<0?"negative":"";
+   $("#todayAvailableHint").textContent=available===null?"أدخل الرصيد والمحجوز":"بعد طرح المبالغ المحجوزة";
+
+   if(loadedTodayDataFor===d){
+     $("#todaySpendingValue").textContent=todayExpenseCount?fmtMoney(todayExpenseTotal):"—";
+     $("#todaySpendingHint").textContent=todayExpenseCount?todayExpenseCount+" حركة مصروف مدخلة اليوم":"لا توجد مصروفات مدخلة اليوم";
+   }else{
+     $("#todaySpendingValue").textContent="—";
+     $("#todaySpendingHint").textContent="جارٍ قراءة سجل اليوم";
+   }
+
+   const recentSleep=sleepRow&&sleepRow.date>=dateKeyDaysAgo(1)&&sleepRow.date<=d;
+   const sleepShort=recentSleep&&Number(sleepRow.duration)<6;
+   let action,reason,next;
+   if(sleepShort){
+     action="خفف الضغط وخذ فترة تعافٍ";
+     reason="آخر نوم مسجل "+Number(sleepRow.duration).toFixed(1)+" ساعة؛ تجنّب بدء عمل ثقيل وأنت مرهق. الصلاة مقدّمة عندما يدخل وقتها.";
+     next="بعدها: راجع التزاماتك وحدّث بيانات اليوم";
+   }else if(available!==null&&available<0){
+     action="راجع المبالغ المحجوزة قبل أي صرف";
+     reason="المحجوز حاليًا أعلى من رصيدك؛ لا تتعامل مع الرصيد كمال متاح. الصلاة مقدّمة في وقتها.";
+     next="بعدها: حدّد أهم التزام مالي قادم";
+   }else if(!recentSleep){
+     action="سجّل آخر نوم واستيقاظ فعلي";
+     reason="ليس عندنا جلسة نوم حديثة مؤكدة لنحدد طاقتك بدقة. الصلاة مقدّمة حين يدخل وقتها.";
+     next=available===null?"بعدها: حدّث الرصيد والمبالغ المحجوزة":"بعدها: راجع صلوات اليوم";
+   }else if(available===null){
+     action="حدّث الرصيد والمبالغ المحجوزة";
+     reason="بدونها لا يمكن معرفة المبلغ المتاح فعليًا أو تقييم أي مصروف جديد. حافظ على الصلاة في وقتها.";
+     next="بعدها: راجع ارتباطاتك واختر مهمة واحدة";
+   }else if(logged<5){
+     action="تابع الصلاة القادمة عند دخول وقتها";
+     reason="عندك صلوات لم تُسجّل حالتها بعد؛ عدم تسجيلها لا يعني أنها فاتتك. الموقع لا يحسب مواقيت الصلاة تلقائيًا.";
+     next="بعدها: راجع التزاماتك أو خصص وقتًا للراحة";
+   }else{
+     action="راجع ارتباطاتك ثم اختر مهمة واحدة";
+     reason="بيانات الصلاة والنوم والمال مسجلة. التقويم غير مربوط بعد، فلا يمكننا الجزم أن الوقت خالٍ من المواعيد.";
+     next="إذا ما عندك التزام: الوقت مناسب للراحة";
+   }
+   $("#nowTitle").textContent=action;
+   $("#nowWhy").textContent=reason;
+   $("#nextAction").textContent=next;
+ }
+ async function refreshTodayFromDB(){
+   if(!lifeDBReady)return;
+   const seq=++todayRefreshSerial;
+   try{
+     const [sleeps,txs]=await Promise.all([dbGetAll("sleep_sessions"),dbGetAll("transactions")]);
+     if(seq!==todayRefreshSerial)return;
+     const today=riyadhDateKey();
+     const valid=sleeps.filter(s=>s&&s.date&&Number(s.duration)>0);
+     valid.sort((a,b)=>String(b.date).localeCompare(String(a.date))||String(b.ts||"").localeCompare(String(a.ts||"")));
+     latestSleepRecord=valid[0]||null;
+     const expenses=txs.filter(t=>t&&t.kind==="expense"&&t.date===today);
+     todayExpenseTotal=expenses.reduce((sum,e)=>sum+Number(e.amount||0),0);
+     todayExpenseCount=expenses.length;
+     loadedTodayDataFor=today;
+     renderTodayCore();
+   }catch(e){
+     loadedTodayDataFor=null;
+     if($("#todaySpendingHint"))$("#todaySpendingHint").textContent="تعذر قراءة سجل اليوم";
+   }
  }
  function fmtMoney(v){return v===null||v===undefined?"—":Number(v).toLocaleString("ar-SA")+" ر.س";}
  function moneyAvailable(){
@@ -1106,7 +1204,7 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
  document.addEventListener("visibilitychange",()=>{if(!document.hidden)checkDayBoundary();});
  window.addEventListener("pageshow",()=>checkDayBoundary());
  window.addEventListener("focus",()=>checkDayBoundary());
- setInterval(()=>checkDayBoundary(),60000);
+ setInterval(()=>{checkDayBoundary();renderTodayCore();},60000);
  document.addEventListener("click",()=>checkDayBoundary(),true);
  if("serviceWorker" in navigator){
    navigator.serviceWorker.getRegistrations().then(regs=>regs.forEach(r=>r.unregister())).catch(()=>{});
