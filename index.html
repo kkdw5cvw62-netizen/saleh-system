@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="نظام صالح">
 <link rel="manifest" href="manifest.webmanifest">
-<title>نظام صالح — اللاعب الواقعي v1.3.1</title>
+<title>نظام صالح — اللاعب الواقعي v1.4.0</title>
 <style>
 :root{
  --bg:#03060d;--panel:#09111f;--cyan:#63edff;--violet:#987dff;--gold:#ffd36a;
@@ -99,6 +99,28 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
 .eventItem strong{font-size:10px}.eventItem .meta{font-size:8px;color:var(--muted);margin-top:3px;line-height:1.5}
 .backupActions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.fileBtn{position:relative;overflow:hidden}.fileBtn input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .dbStatus{font-size:9px;color:var(--muted);margin-top:8px}
+.todayHeading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:8px 0 14px}
+.todayHeading h1{margin:3px 0 0;font-size:24px;letter-spacing:-.5px}
+.todayClock{display:flex;flex-direction:column;align-items:flex-end;gap:4px;text-align:left}
+.todayClock strong{font-size:17px;color:var(--cyan)}
+.todayClock span{font-size:9px;color:var(--muted);line-height:1.5}
+.todayGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}
+.todayTile{display:flex;flex-direction:column;gap:7px;min-width:0;min-height:108px;
+ border:1px solid rgba(99,237,255,.15);border-radius:15px;padding:12px;
+ background:linear-gradient(155deg,rgba(99,237,255,.055),rgba(8,14,26,.95));
+ color:inherit;text-decoration:none;touch-action:manipulation}
+.todayTile:active{border-color:var(--cyan);background:rgba(99,237,255,.12)}
+.todayLabel{font-size:10px;color:#bdcddb}
+.todayTile strong{font-size:19px;letter-spacing:-.4px;overflow-wrap:anywhere}
+.todayHint{font-size:9px;color:var(--muted);line-height:1.5}
+.todayCalendar{display:flex;gap:10px;align-items:flex-start;border:1px solid rgba(255,211,106,.16);
+ border-radius:14px;padding:12px;margin:12px 0 10px;background:rgba(255,211,106,.025)}
+.todayCalendar>span{font-size:20px;color:var(--gold)}
+.todayCalendar strong{font-size:11px}
+.todayCalendar p{font-size:10px;color:var(--muted);line-height:1.6;margin:4px 0 0}
+.todayQuick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-bottom:16px}
+.todayQuick .btn{text-align:center;min-height:44px;padding:7px 5px;font-size:10px}
+@media(max-width:345px){.todayHeading h1{font-size:21px}.todayTile{padding:10px}.todayTile strong{font-size:17px}}
 .toast{position:fixed;z-index:90;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom) + 82px);max-width:496px;margin:auto;display:none;border:1px solid rgba(99,237,255,.28);border-radius:14px;padding:12px 14px;background:#081321ee;font-size:11px}.toast.show{display:block}
 </style>
 </head>
@@ -109,6 +131,50 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
  <div class="id"><div class="avatar">ص</div><div><div class="small muted">النظام الشخصي</div><strong>صالح</strong></div></div>
  <div class="chip">● خاص بك فقط</div>
 </header>
+
+<section id="today" class="page">
+ <div class="todayHeading">
+  <div><div class="small muted">SYSTEM · TODAY</div><h1>يومك الآن</h1></div>
+  <div class="todayClock"><strong id="todayTime">—</strong><span id="todayDate">بتوقيت الرياض</span></div>
+ </div>
+  <div class="questnow" style="margin-bottom:12px">
+  <div class="small muted">وش تسوي الآن؟</div>
+  <h3 id="nowTitle">صلِّ الصلاة الحالية أولًا</h3>
+  <p id="nowWhy">في نظامك الشخصي العبادة أعلى أولوية، وبعدها يوازن النظام بين النوم والمال والوقت والطاقة.</p>
+  <div class="tag good" id="nextAction">بعدها: أهم مهمة واحدة فقط</div>
+ </div>
+ <div class="todayGrid">
+  <a class="todayTile" href="#worship">
+   <span class="todayLabel">العبادة · Tier S</span>
+   <strong id="todayPrayerValue">—</strong>
+   <span class="todayHint" id="todayPrayerHint">حالة الصلوات اليوم</span>
+  </a>
+  <a class="todayTile" href="#sleepCard">
+   <span class="todayLabel">النوم</span>
+   <strong id="todaySleepValue">—</strong>
+   <span class="todayHint" id="todaySleepHint">آخر نوم مسجل</span>
+  </a>
+  <a class="todayTile" href="#moneyCard">
+   <span class="todayLabel">المتاح الحقيقي</span>
+   <strong id="todayAvailableValue">—</strong>
+   <span class="todayHint" id="todayAvailableHint">الرصيد ناقص المحجوز</span>
+  </a>
+  <a class="todayTile" href="#history">
+   <span class="todayLabel">المصروف المسجل اليوم</span>
+   <strong id="todaySpendingValue">—</strong>
+   <span class="todayHint" id="todaySpendingHint">من سجل المصروفات</span>
+  </a>
+ </div>
+ <div class="todayCalendar">
+  <span>◷</span>
+  <div><strong>المواعيد</strong><p>التقويم غير مربوط بالموقع حاليًا؛ لذلك لا نفترض أن وقتك فاضي.</p></div>
+ </div>
+ <div class="todayQuick">
+  <a class="btn" href="#worship">تسجيل صلاة</a>
+  <a class="btn" href="#sleepCard">تسجيل النوم</a>
+  <a class="btn" href="#moneyCard">تحديث المال</a>
+ </div>
+</section>
 
 <section id="status" class="page">
  <div class="hero">
@@ -121,12 +187,7 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
   <div class="tag gold" style="margin-top:11px">اللقب: <span id="titleText">المبتدئ</span></div>
  </div>
 
- <div class="questnow" style="margin-bottom:12px">
-  <div class="small muted">وش تسوي الآن؟</div>
-  <h3 id="nowTitle">صلِّ الصلاة الحالية أولًا</h3>
-  <p id="nowWhy">في نظامك الشخصي العبادة أعلى أولوية، وبعدها يوازن النظام بين النوم والمال والوقت والطاقة.</p>
-  <div class="tag good" id="nextAction">بعدها: أهم مهمة واحدة فقط</div>
- </div>
+
 
  <div class="grid">
   <a class="tile" href="#worship" style="color:inherit;text-decoration:none"><div class="small muted">الأولوية الأولى</div><strong>العبادة</strong></a>
@@ -343,7 +404,7 @@ input{width:100%;min-height:46px;border:1px solid rgba(99,237,255,.18);border-ra
 </div>
 
 <nav class="bottom">
- <a class="navbtn" href="#status"><span>◈</span><span>الحالة</span></a>
+ <a class="navbtn" href="#today"><span>◈</span><span>اليوم</span></a>
  <a class="navbtn" href="#worship"><span>◉</span><span>العبادة</span></a>
  <a class="navbtn" href="#life"><span>▣</span><span>الحياة</span></a>
  <a class="navbtn" href="#goals"><span>◆</span><span>المسارات</span></a>
